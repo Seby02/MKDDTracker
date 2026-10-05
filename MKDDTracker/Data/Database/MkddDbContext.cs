@@ -31,12 +31,12 @@ public sealed class MkddDbContext : DbContext
             .IsUnique();
 
         modelBuilder.Entity<MkddSnapshot>()
-            .HasIndex(x => new
-            {
-                x.CourseId,
-                x.CapturedAt
-            })
-            .IsUnique();
+    .HasIndex(x => new
+    {
+        x.CourseId,
+        x.RankingDate
+    })
+    .IsUnique();
 
         modelBuilder.Entity<MkddPerformanceEntity>()
             .HasIndex(x => new

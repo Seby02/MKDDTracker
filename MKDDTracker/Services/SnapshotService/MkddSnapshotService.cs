@@ -16,9 +16,10 @@ public sealed class MkddSnapshotService
     }
 
     public async Task<MkddSnapshot> SaveSnapshotAsync(
-        string courseName,
-        IReadOnlyList<MkddPerformance> performances,
-        DateTime capturedAt)
+    string courseName,
+    IReadOnlyList<MkddPerformance> performances,
+    DateOnly rankingDate,
+    DateTime capturedAt)
     {
         var course = await _db.Courses
             .SingleOrDefaultAsync(x => x.Name == courseName);
@@ -34,13 +35,26 @@ public sealed class MkddSnapshotService
             await _db.SaveChangesAsync();
         }
 
+
+        var existingSnapshot = await _db.Snapshots
+    .SingleOrDefaultAsync(x =>
+        x.CourseId == course.Id &&
+        x.RankingDate == rankingDate);
+
+        if (existingSnapshot is not null)
+        {
+            return existingSnapshot;
+        }
+
         var snapshot = new MkddSnapshot
         {
             CourseId = course.Id,
+            RankingDate = rankingDate,
             CapturedAt = capturedAt
         };
 
         _db.Snapshots.Add(snapshot);
+
 
         foreach (var performance in performances)
         {

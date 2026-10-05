@@ -30,10 +30,14 @@ await db.Database.EnsureCreatedAsync();
 
 var snapshotService = new MkddSnapshotService(db);
 
+var rankingDate = DateOnly.FromDateTime(DateTime.UtcNow);
+var capturedAt = DateTime.UtcNow;
+
 await snapshotService.SaveSnapshotAsync(
     courseName,
     performances,
-    DateTime.UtcNow);
+    rankingDate,
+    capturedAt);
 
 Console.WriteLine("Snapshot enregistré.");
 
@@ -74,11 +78,34 @@ foreach (var point in evolution.Points)
     };
 
     Console.WriteLine(
-        $"{point.Date:dd/MM/yyyy}   " +
+        $"{point.RankingDate:dd/MM/yyyy}   " +
         $"#{point.Rank,-4}   " +
         $"{FormatRaceTime(point.Time),-10}   " +
         $"{rankChange,-6}   " +
         $"{timeChange}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Progression totale : {FormatRankChange(evolution.TotalRankChange)}");
+
+    Console.WriteLine(
+        $"Évolution du chrono : {FormatTimeChange(evolution.TotalTimeChange)}");
+}
+
+static string FormatRankChange(int change)
+{
+    if (change > 0)
+    {
+        return $"▲ +{change} places";
+    }
+
+    if (change < 0)
+    {
+        return $"▼ {Math.Abs(change)} places";
+    }
+
+    return "— aucune progression";
 }
 
 static string FormatRaceTime(TimeSpan time)

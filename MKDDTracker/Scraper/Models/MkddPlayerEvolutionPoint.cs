@@ -1,7 +1,7 @@
 ﻿namespace MKDDTracker.Scraper.Models;
 
 public sealed record MkddPlayerEvolutionPoint(
-    DateTime Date,
+    DateOnly RankingDate,
     int Rank,
     TimeSpan Time,
     int? RankChange,

@@ -68,7 +68,7 @@ public sealed class MkddEvolutionService
 
             points.Add(
                 new MkddPlayerEvolutionPoint(
-                    performance.Snapshot.CapturedAt,
+                    performance.Snapshot.RankingDate,
                     performance.Rank,
                     performance.Time,
                     rankChange,
