@@ -10,7 +10,8 @@ public sealed record MkddPlayerMovement(
     TimeSpan PreviousTime,
     TimeSpan CurrentTime,
     int RankChange,
-    MkddMovementRelation Relation)
+    MkddMovementRelation Relation,
+    MkddMovementCause Cause)
 {
     public TimeSpan TimeChange =>
         CurrentTime - PreviousTime;

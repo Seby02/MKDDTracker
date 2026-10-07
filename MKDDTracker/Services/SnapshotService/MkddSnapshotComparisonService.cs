@@ -196,6 +196,27 @@ public sealed class MkddSnapshotComparisonService
                     MkddMovementRelation.NoDirectCrossing;
             }
 
+            var targetImproved =
+    targetCurrent.Time < targetPrevious.Time;
+
+            var opponentImproved =
+                current.Time < previous.Time;
+
+            MkddMovementCause cause;
+
+            if (targetImproved && opponentImproved)
+            {
+                cause = MkddMovementCause.BothImproved;
+            }
+            else if (targetImproved)
+            {
+                cause = MkddMovementCause.TargetDriven;
+            }
+            else
+            {
+                cause = MkddMovementCause.OpponentDriven;
+            }
+
             movements.Add(
                 new MkddPlayerMovement(
                     playerId,
@@ -207,7 +228,8 @@ public sealed class MkddSnapshotComparisonService
                     previous.Time,
                     current.Time,
                     previous.Rank - current.Rank,
-                    relation));
+                    relation,
+                    cause));
         }
 
         return movements

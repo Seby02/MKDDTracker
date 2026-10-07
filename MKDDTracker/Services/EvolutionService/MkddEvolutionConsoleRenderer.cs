@@ -150,6 +150,13 @@ public sealed class MkddEvolutionConsoleRenderer
                     Console.WriteLine(
                         $"      Evolution : " +
                         $"{FormatTimeChange(movement.TimeChange)}");
+
+                    Console.WriteLine(
+                        $"      Cause : " +
+                        $"{FormatMovementCause(
+                            movement.Cause,
+                            report.PlayerName)}");
+
                 }
             }
 
@@ -173,11 +180,37 @@ public sealed class MkddEvolutionConsoleRenderer
                     Console.WriteLine(
                         $"      Evolution : " +
                         $"{FormatTimeChange(movement.TimeChange)}");
+
+                    Console.WriteLine(
+                        $"      Cause : " +
+                        $"{FormatMovementCause(
+                            movement.Cause,
+                            report.PlayerName)}");
                 }
             }
         }
 
         Console.WriteLine();
+    }
+
+    private static string FormatMovementCause(
+    MkddMovementCause cause,
+    string targetPlayerName)
+    {
+        return cause switch
+        {
+            MkddMovementCause.TargetDriven =>
+                $"progression de {targetPlayerName}",
+
+            MkddMovementCause.OpponentDriven =>
+                "progression de l'adversaire",
+
+            MkddMovementCause.BothImproved =>
+                "progression des deux joueurs",
+
+            _ =>
+                "inconnue"
+        };
     }
 
     private static string FormatRankChange(int change)
