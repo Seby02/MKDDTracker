@@ -70,14 +70,11 @@ public sealed class MkddSnapshotComparisonService
         // 1. Classement théorique avec le nouveau chrono
         // -------------------------------------------------
 
-        var previousOtherPlayers =
-            previousSnapshot.Performances
-                .Where(x => x.PlayerId != player.Id)
-                .ToList();
-
         var counterfactualRank =
-            1 + previousOtherPlayers.Count(x =>
-                x.Time < currentPerformance.Time);
+    CalculateRank(
+        previousSnapshot.Performances,
+        player.Id,
+        currentPerformance.Time);
 
         // -------------------------------------------------
         // 2. Progression totale
@@ -238,5 +235,19 @@ public sealed class MkddSnapshotComparisonService
                 MkddMovementRelation.NoDirectCrossing)
             .OrderBy(x => x.CurrentRank)
             .ToList();
+    }
+
+    private static int CalculateRank(
+    IEnumerable<MkddPerformanceEntity> performances,
+    int targetPlayerId,
+    TimeSpan targetTime)
+    {
+        return performances
+            .Where(x => x.PlayerId != targetPlayerId)
+            .Count(x =>
+                x.Time < targetTime ||
+                (x.Time == targetTime &&
+                 x.PlayerId < targetPlayerId))
+            + 1;
     }
 }

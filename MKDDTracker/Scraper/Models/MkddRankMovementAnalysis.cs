@@ -1,11 +1,16 @@
-﻿namespace MKDDTracker.Scraper.Models;
+﻿using MKDDTracker.Scraper.Models.Evolution;
 
 public sealed record MkddRankMovementAnalysis(
+    string PlayerName,
+    string CourseName,
+    DateOnly PreviousDate,
+    DateOnly CurrentDate,
     int PreviousRank,
     int CurrentRank,
+    TimeSpan PreviousTime,
+    TimeSpan CurrentTime,
     int CounterfactualRank,
     int TotalPlacesGained,
     int PlacesGainedFromOwnImprovement,
     int PlacesGainedFromOthers,
-    TimeSpan PreviousTime,
-    TimeSpan CurrentTime);
+    IReadOnlyList<MkddPlayerMovement> PlayersWhoMoved);

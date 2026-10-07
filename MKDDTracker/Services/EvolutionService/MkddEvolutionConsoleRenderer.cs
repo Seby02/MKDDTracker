@@ -33,6 +33,10 @@ public sealed class MkddEvolutionConsoleRenderer
                 $"{FormatTimeChange(timeChange)}");
 
             Console.WriteLine(
+                $"  Rang avec son nouveau chrono seul : " +
+                $"#{step.CounterfactualRank}");
+
+            Console.WriteLine(
                 $"  Son chrono : " +
                 $"{FormatPlaces(step.PlacesGainedFromOwnImprovement)}");
 

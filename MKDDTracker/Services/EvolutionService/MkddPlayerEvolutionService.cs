@@ -66,21 +66,18 @@ public sealed class MkddPlayerEvolutionService
                 continue;
 
             steps.Add(
-                new MkddPlayerEvolutionStep(
-                    previousDate,
-                    currentDate,
-
-                    comparison.PreviousRank,
-                    comparison.CurrentRank,
-
-                    comparison.PreviousTime,
-                    comparison.CurrentTime,
-
-                    comparison.TotalPlacesGained,
-                    comparison.PlacesGainedFromOwnImprovement,
-                    comparison.PlacesGainedFromOthers,
-
-                    comparison.PlayersWhoMoved));
+    new MkddPlayerEvolutionStep(
+        previousDate,
+        currentDate,
+        comparison.PreviousRank,
+        comparison.CurrentRank,
+        comparison.PreviousTime,
+        comparison.CurrentTime,
+        comparison.CounterfactualRank,
+        comparison.TotalPlacesGained,
+        comparison.PlacesGainedFromOwnImprovement,
+        comparison.PlacesGainedFromOthers,
+        comparison.PlayersWhoMoved));
         }
 
         if (steps.Count == 0)
