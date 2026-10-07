@@ -1,9 +1,9 @@
 ﻿using Microsoft.EntityFrameworkCore;
-using MKDDTracker.Scraper.Data;
 using MKDDTracker.Scraper.Data.Database;
-using MKDDTracker.Scraper.Models;
+using MKDDTracker.Scraper.Data.Entities;
+using MKDDTracker.Scraper.Models.Evolution;
 
-namespace MKDDTracker.Scraper.Services;
+namespace MKDDTracker.Scraper.Services.SnapshotService;
 
 public sealed class MkddSnapshotComparisonService
 {
@@ -15,10 +15,10 @@ public sealed class MkddSnapshotComparisonService
     }
 
     public async Task<MkddRankMovementAnalysis?> CompareAsync(
-    string playerName,
-    string courseName,
-    DateOnly previousDate,
-    DateOnly currentDate)
+        string playerName,
+        string courseName,
+        DateOnly previousDate,
+        DateOnly currentDate)
     {
         var player = await _db.Players
             .SingleOrDefaultAsync(x => x.Name == playerName);
@@ -34,12 +34,14 @@ public sealed class MkddSnapshotComparisonService
 
         var previousSnapshot = await _db.Snapshots
             .Include(x => x.Performances)
+                .ThenInclude(x => x.Player)
             .SingleOrDefaultAsync(x =>
                 x.CourseId == course.Id &&
                 x.RankingDate == previousDate);
 
         var currentSnapshot = await _db.Snapshots
             .Include(x => x.Performances)
+                .ThenInclude(x => x.Player)
             .SingleOrDefaultAsync(x =>
                 x.CourseId == course.Id &&
                 x.RankingDate == currentDate);
@@ -52,13 +54,11 @@ public sealed class MkddSnapshotComparisonService
 
         var previousPerformance =
             previousSnapshot.Performances
-                .SingleOrDefault(x =>
-                    x.PlayerId == player.Id);
+                .SingleOrDefault(x => x.PlayerId == player.Id);
 
         var currentPerformance =
             currentSnapshot.Performances
-                .SingleOrDefault(x =>
-                    x.PlayerId == player.Id);
+                .SingleOrDefault(x => x.PlayerId == player.Id);
 
         if (previousPerformance is null ||
             currentPerformance is null)
@@ -66,40 +66,146 @@ public sealed class MkddSnapshotComparisonService
             return null;
         }
 
+        // -------------------------------------------------
+        // 1. Classement théorique avec le nouveau chrono
+        // -------------------------------------------------
+
         var previousOtherPlayers =
             previousSnapshot.Performances
                 .Where(x => x.PlayerId != player.Id)
                 .ToList();
 
-        // Classement théorique :
-        //
-        // On garde tous les chronos des autres joueurs
-        // tels qu'ils étaient la semaine précédente,
-        // mais on donne à Mattilde son nouveau chrono.
         var counterfactualRank =
             1 + previousOtherPlayers.Count(x =>
                 x.Time < currentPerformance.Time);
+
+        // -------------------------------------------------
+        // 2. Progression totale
+        // -------------------------------------------------
 
         var totalPlacesGained =
             previousPerformance.Rank -
             currentPerformance.Rank;
 
+        // -------------------------------------------------
+        // 3. Progression grâce à son propre chrono
+        // -------------------------------------------------
+
         var placesGainedFromOwnImprovement =
             previousPerformance.Rank -
             counterfactualRank;
+
+        // -------------------------------------------------
+        // 4. Progression grâce aux autres joueurs
+        // -------------------------------------------------
 
         var placesGainedFromOthers =
             counterfactualRank -
             currentPerformance.Rank;
 
+        // -------------------------------------------------
+        // 5. Analyse des autres joueurs
+        // -------------------------------------------------
+
+        var playersWhoMoved =
+            BuildPlayerMovements(
+                player.Id,
+                previousSnapshot,
+                currentSnapshot);
+
         return new MkddRankMovementAnalysis(
+            player.Name,
+            course.Name,
+
+            previousDate,
+            currentDate,
+
             previousPerformance.Rank,
             currentPerformance.Rank,
+
+            previousPerformance.Time,
+            currentPerformance.Time,
+
             counterfactualRank,
+
             totalPlacesGained,
             placesGainedFromOwnImprovement,
             placesGainedFromOthers,
-            previousPerformance.Time,
-            currentPerformance.Time);
+
+            playersWhoMoved);
+    }
+
+    private static IReadOnlyList<MkddPlayerMovement> BuildPlayerMovements(
+    int targetPlayerId,
+    MkddSnapshot previousSnapshot,
+    MkddSnapshot currentSnapshot)
+    {
+        var targetPrevious =
+            previousSnapshot.Performances
+                .Single(x => x.PlayerId == targetPlayerId);
+
+        var targetCurrent =
+            currentSnapshot.Performances
+                .Single(x => x.PlayerId == targetPlayerId);
+
+        var previousByPlayer =
+            previousSnapshot.Performances
+                .Where(x => x.PlayerId != targetPlayerId)
+                .ToDictionary(x => x.PlayerId);
+
+        var currentByPlayer =
+            currentSnapshot.Performances
+                .Where(x => x.PlayerId != targetPlayerId)
+                .ToDictionary(x => x.PlayerId);
+
+        var movements = new List<MkddPlayerMovement>();
+
+        foreach (var playerId in previousByPlayer.Keys)
+        {
+            if (!currentByPlayer.TryGetValue(
+                    playerId,
+                    out var current))
+            {
+                continue;
+            }
+
+            var previous = previousByPlayer[playerId];
+
+            var wasAheadBefore =
+                previous.Rank < targetPrevious.Rank;
+
+            var isAheadNow =
+                current.Rank < targetCurrent.Rank;
+
+            MkddMovementRelation relation;
+
+            if (wasAheadBefore && !isAheadNow)
+            {
+                relation = MkddMovementRelation.TargetPassedPlayer;
+            }
+            else if (!wasAheadBefore && isAheadNow)
+            {
+                relation = MkddMovementRelation.PlayerPassedTarget;
+            }
+            else
+            {
+                relation = MkddMovementRelation.NoDirectCrossing;
+            }
+
+            movements.Add(
+                new MkddPlayerMovement(
+                    playerId,
+                    previous.Player.Name,
+                    previous.Rank,
+                    current.Rank,
+                    previous.Time,
+                    current.Time,
+                    previous.Rank - current.Rank,
+                    relation));
+        }
+
+        return movements
+            .OrderBy(x => x.CurrentRank)
+            .ToList();
     }
 }

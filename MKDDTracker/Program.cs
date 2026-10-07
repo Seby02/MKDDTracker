@@ -1,6 +1,7 @@
 ﻿using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data;
 using MKDDTracker.Scraper.Data.Database;
+using MKDDTracker.Scraper.Models.Evolution;
 using MKDDTracker.Scraper.Parsing;
 using MKDDTracker.Scraper.Services;
 using MKDDTracker.Scraper.Services.EvolutionService;
@@ -159,6 +160,35 @@ if (comparison is null)
         "Impossible de comparer les snapshots.");
 
     return;
+}
+
+Console.WriteLine();
+
+Console.WriteLine("Joueurs ayant bouge");
+Console.WriteLine("-------------------");
+
+foreach (var movement in comparison.PlayersWhoMoved)
+{
+    switch (movement.Relation)
+    {
+        case MkddMovementRelation.TargetPassedPlayer:
+
+            Console.WriteLine(
+                $"{movement.PlayerName,-25} " +
+                $"#{movement.PreviousRank} -> #{movement.CurrentRank}   " +
+                "Mattilde depasse");
+
+            break;
+
+        case MkddMovementRelation.PlayerPassedTarget:
+
+            Console.WriteLine(
+                $"{movement.PlayerName,-25} " +
+                $"#{movement.PreviousRank} -> #{movement.CurrentRank}   " +
+                "depasse Mattilde");
+
+            break;
+    }
 }
 
 Console.WriteLine();
