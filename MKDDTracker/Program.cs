@@ -10,11 +10,31 @@ using MKDDTracker.Scraper.Services.SnapshotService;
 const string filePath = "Samples/luigi-circuit.html";
 const string courseName = "Luigi Circuit";
 
+const string playerName = "Mattilde F";
+
+var evolutionStartDate = new DateOnly(2026, 9, 1);
+var evolutionEndDate = new DateOnly(2026, 9, 22);
+
+var previousDate = new DateOnly(2026, 9, 15);
+var currentDate = new DateOnly(2026, 9, 22);
+
+
+// ========================================
+// VERIFICATION DU FICHIER
+// ========================================
+
 if (!File.Exists(filePath))
 {
-    Console.WriteLine($"Fichier introuvable : {filePath}");
+    Console.WriteLine(
+        $"Fichier introuvable : {filePath}");
+
     return;
 }
+
+
+// ========================================
+// PARSING DU CLASSEMENT ORIGINAL
+// ========================================
 
 var html = await File.ReadAllTextAsync(filePath);
 
@@ -22,12 +42,18 @@ var parser = new MkddCoursePageParser();
 
 var performances = parser.Parse(html);
 
+
+// ========================================
+// TOP 10 ORIGINAL
+// ========================================
+
 var originalTop10 = performances
     .OrderBy(x => x.Rank)
     .Take(10);
 
 Console.WriteLine();
 Console.WriteLine("TOP 10 ORIGINAL");
+Console.WriteLine("----------------");
 
 foreach (var performance in originalTop10)
 {
@@ -37,17 +63,33 @@ foreach (var performance in originalTop10)
         $"{FormatRaceTime(performance.Time)}");
 }
 
+Console.WriteLine();
+
 Console.WriteLine(
     $"Performances trouvées : {performances.Count}");
+
+
+// ========================================
+// DATABASE
+// ========================================
 
 await using var db = new MkddDbContext();
 
 await db.Database.EnsureCreatedAsync();
 
-var snapshotService = new MkddSnapshotService(db);
 
-var rankingDate = DateOnly.FromDateTime(DateTime.UtcNow);
-var capturedAt = DateTime.UtcNow;
+// ========================================
+// SNAPSHOT REEL
+// ========================================
+
+var snapshotService =
+    new MkddSnapshotService(db);
+
+var rankingDate =
+    DateOnly.FromDateTime(DateTime.UtcNow);
+
+var capturedAt =
+    DateTime.UtcNow;
 
 await snapshotService.SaveSnapshotAsync(
     courseName,
@@ -55,44 +97,74 @@ await snapshotService.SaveSnapshotAsync(
     rankingDate,
     capturedAt);
 
-Console.WriteLine("Snapshot enregistré.");
+Console.WriteLine(
+    "Snapshot enregistré.");
 
-var enzo = await db.Players
-    .SingleOrDefaultAsync(x => x.Name == "Enzo Vusur");
+
+// ========================================
+// VERIFICATION ENZO
+// ========================================
+
+var enzo =
+    await db.Players
+        .SingleOrDefaultAsync(
+            x => x.Name == "Enzo Vusur");
 
 Console.WriteLine(
     enzo is null
         ? "Enzo introuvable"
         : $"Enzo trouvé : ID {enzo.Id}");
 
-var testSeeder = new MkddTestDataSeeder(db);
+
+// ========================================
+// DONNEES DE TEST
+// ========================================
+
+var testSeeder =
+    new MkddTestDataSeeder(db);
 
 await testSeeder.SeedAsync(
     courseName,
-    "Mattilde F",
+    playerName,
     "Enzo Vusur",
     performances);
 
-Console.WriteLine("Données de test créées.");
+Console.WriteLine(
+    "Données de test créées.");
 
-var evolutionService = new MkddEvolutionService(db);
+
+// ========================================
+// EVOLUTION DU JOUEUR
+// ========================================
+
+var evolutionService =
+    new MkddEvolutionService(db);
 
 var evolution =
     await evolutionService.GetPlayerEvolutionAsync(
-        "Mattilde F",
+        playerName,
         courseName,
-        new DateOnly(2026, 9, 1),
-        new DateOnly(2026, 9, 22));
+        evolutionStartDate,
+        evolutionEndDate);
 
 if (evolution is null)
 {
-    Console.WriteLine("Joueur introuvable.");
+    Console.WriteLine(
+        "Joueur introuvable.");
+
     return;
 }
 
+
+// ========================================
+// HISTORIQUE
+// ========================================
+
 Console.WriteLine();
+
 Console.WriteLine(
-    $"{evolution.PlayerName} — {evolution.CourseName}");
+    $"{evolution.PlayerName} - " +
+    $"{evolution.CourseName}");
 
 Console.WriteLine(
     "------------------------------------------------");
@@ -102,15 +174,23 @@ foreach (var point in evolution.Points)
     var rankChange = point.RankChange switch
     {
         null => "-",
-        > 0 => $"+{point.RankChange}",
-        < 0 => $"-{Math.Abs(point.RankChange.Value)}",
+
+        > 0 =>
+            $"+{point.RankChange}",
+
+        < 0 =>
+            $"-{Math.Abs(point.RankChange.Value)}",
+
         _ => "0"
     };
 
     var timeChange = point.TimeChange switch
     {
         null => "-",
-        _ => FormatTimeChange(point.TimeChange.Value)
+
+        _ =>
+            FormatTimeChange(
+                point.TimeChange.Value)
     };
 
     Console.WriteLine(
@@ -129,6 +209,12 @@ foreach (var point in evolution.Points)
 Console.WriteLine();
 
 Console.WriteLine(
+    "RESUME GLOBAL");
+
+Console.WriteLine(
+    "-------------");
+
+Console.WriteLine(
     $"Progression totale : " +
     $"{FormatRankChange(evolution.TotalRankChange)}");
 
@@ -138,66 +224,53 @@ Console.WriteLine(
 
 
 // ========================================
-// COMPARAISON DE LA DERNIERE SEMAINE
+// SERVICE DE COMPARAISON
 // ========================================
-
-var previousDate = new DateOnly(2026, 9, 15);
-var currentDate = new DateOnly(2026, 9, 22);
 
 var comparisonService =
     new MkddSnapshotComparisonService(db);
 
+
+// ========================================
+// COMPARAISON DE LA DERNIERE SEMAINE
+// ========================================
+
 var comparison =
     await comparisonService.CompareAsync(
-        "Mattilde F",
+        playerName,
         courseName,
         previousDate,
         currentDate);
 
 if (comparison is null)
 {
+    Console.WriteLine();
+
     Console.WriteLine(
-        "Impossible de comparer les snapshots.");
+        "Impossible de comparer " +
+        "les snapshots.");
 
     return;
 }
 
-Console.WriteLine();
 
-Console.WriteLine("Joueurs ayant bouge");
-Console.WriteLine("-------------------");
-
-foreach (var movement in comparison.PlayersWhoMoved)
-{
-    switch (movement.Relation)
-    {
-        case MkddMovementRelation.TargetPassedPlayer:
-
-            Console.WriteLine(
-                $"{movement.PlayerName,-25} " +
-                $"#{movement.PreviousRank} -> #{movement.CurrentRank}   " +
-                "Mattilde depasse");
-
-            break;
-
-        case MkddMovementRelation.PlayerPassedTarget:
-
-            Console.WriteLine(
-                $"{movement.PlayerName,-25} " +
-                $"#{movement.PreviousRank} -> #{movement.CurrentRank}   " +
-                "depasse Mattilde");
-
-            break;
-    }
-}
+// ========================================
+// ANALYSE DU MOUVEMENT
+// ========================================
 
 Console.WriteLine();
-Console.WriteLine("Analyse du mouvement");
-Console.WriteLine("---------------------");
 
 Console.WriteLine(
-    $"Classement : #{comparison.PreviousRank} " +
-    $"-> #{comparison.CurrentRank}");
+    "ANALYSE DU MOUVEMENT");
+
+Console.WriteLine(
+    "---------------------");
+
+Console.WriteLine(
+    $"Classement : " +
+    $"#{comparison.PreviousRank} " +
+    $"-> " +
+    $"#{comparison.CurrentRank}");
 
 Console.WriteLine(
     $"Chrono : " +
@@ -208,7 +281,8 @@ Console.WriteLine(
 Console.WriteLine();
 
 Console.WriteLine(
-    $"Classement theorique avec son nouveau chrono : " +
+    $"Classement theorique " +
+    $"avec son nouveau chrono : " +
     $"#{comparison.CounterfactualRank}");
 
 Console.WriteLine();
@@ -219,39 +293,254 @@ Console.WriteLine(
 
 Console.WriteLine(
     $"Grace a son amelioration : " +
-    $"{FormatRankChange(comparison.PlacesGainedFromOwnImprovement)}");
+    $"{FormatRankChange(
+        comparison.PlacesGainedFromOwnImprovement)}");
 
 Console.WriteLine(
     $"Grace aux autres joueurs : " +
-    $"{FormatRankChange(comparison.PlacesGainedFromOthers)}");
+    $"{FormatRankChange(
+        comparison.PlacesGainedFromOthers)}");
+
+
+// ========================================
+// JOUEURS AYANT CROISE LE JOUEUR CIBLE
+// ========================================
+
+Console.WriteLine();
+
+Console.WriteLine(
+    "JOUEURS RESPONSABLES DES MOUVEMENTS");
+
+Console.WriteLine(
+    "-----------------------------------");
+
+var crossingPlayers =
+    comparison.PlayersWhoMoved
+        .Where(x =>
+            x.Relation !=
+            MkddMovementRelation.NoDirectCrossing)
+        .ToList();
+
+if (crossingPlayers.Count == 0)
+{
+    Console.WriteLine(
+        "Aucun joueur n'a directement " +
+        "croise le joueur cible.");
+}
+else
+{
+    foreach (var movement in crossingPlayers)
+    {
+        switch (movement.Relation)
+        {
+            case MkddMovementRelation.TargetPassedPlayer:
+
+                Console.WriteLine(
+                    $"+{1} place : " +
+                    $"{movement.PlayerName} " +
+                    $"#{movement.PreviousRank} " +
+                    $"-> #{movement.CurrentRank}");
+
+                Console.WriteLine(
+                    "  -> " +
+                    $"{playerName} le depasse");
+
+                break;
+
+            case MkddMovementRelation.PlayerPassedTarget:
+
+                Console.WriteLine(
+                    $"-{1} place : " +
+                    $"{movement.PlayerName} " +
+                    $"#{movement.PreviousRank} " +
+                    $"-> #{movement.CurrentRank}");
+
+                Console.WriteLine(
+                    "  -> " +
+                    $"{movement.PlayerName} depasse " +
+                    $"{playerName}");
+
+                break;
+        }
+    }
+}
+
+
+// ========================================
+// EVOLUTION COMPLETE SUR LA PERIODE
+// ========================================
+
+var playerEvolutionService =
+    new MkddPlayerEvolutionService(
+        db,
+        comparisonService);
+
+var completeEvolution =
+    await playerEvolutionService.AnalyzeAsync(
+        playerName,
+        courseName,
+        evolutionStartDate,
+        evolutionEndDate);
+
+if (completeEvolution is null)
+{
+    Console.WriteLine();
+
+    Console.WriteLine(
+        "Evolution complete introuvable.");
+
+    return;
+}
+
+
+// ========================================
+// ANALYSE SEMAINE PAR SEMAINE
+// ========================================
+
+Console.WriteLine();
+
+Console.WriteLine(
+    "EVOLUTION SEMAINE PAR SEMAINE");
+
+Console.WriteLine(
+    "------------------------------");
+
+foreach (var step in completeEvolution.Steps)
+{
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"{step.PreviousDate:dd/MM/yyyy} " +
+        $"-> " +
+        $"{step.CurrentDate:dd/MM/yyyy}");
+
+    Console.WriteLine(
+        $"Classement : " +
+        $"#{step.PreviousRank} " +
+        $"-> " +
+        $"#{step.CurrentRank}   " +
+        $"{FormatRankChange(
+            step.TotalPlacesGained)}");
+
+    Console.WriteLine(
+        $"Chrono     : " +
+        $"{FormatRaceTime(step.PreviousTime)} " +
+        $"-> " +
+        $"{FormatRaceTime(step.CurrentTime)}   " +
+        $"{FormatTimeChange(
+            step.CurrentTime -
+            step.PreviousTime)}");
+
+    Console.WriteLine(
+        $"  Son chrono : " +
+        $"{FormatRankChange(
+            step.PlacesGainedFromOwnImprovement)}");
+
+    Console.WriteLine(
+        $"  Autres     : " +
+        $"{FormatRankChange(
+            step.PlacesGainedFromOthers)}");
+}
+
+
+// ========================================
+// RESUME EVOLUTION COMPLETE
+// ========================================
+
+Console.WriteLine();
+
+Console.WriteLine(
+    "RESUME DE L'EVOLUTION");
+
+Console.WriteLine(
+    "---------------------");
+
+Console.WriteLine(
+    $"Joueur : " +
+    $"{completeEvolution.PlayerName}");
+
+Console.WriteLine(
+    $"Circuit : " +
+    $"{completeEvolution.CourseName}");
+
+Console.WriteLine();
+
+Console.WriteLine(
+    $"Progression totale : " +
+    $"{FormatRankChange(
+        completeEvolution.TotalPlacesGained)}");
+
+Console.WriteLine(
+    $"Grace a son chrono : " +
+    $"{FormatRankChange(
+        completeEvolution
+            .TotalPlacesGainedFromOwnImprovement)}");
+
+Console.WriteLine(
+    $"Grace aux autres : " +
+    $"{FormatRankChange(
+        completeEvolution
+            .TotalPlacesGainedFromOthers)}");
+
+Console.WriteLine(
+    $"Evolution du chrono : " +
+    $"{FormatTimeChange(
+        completeEvolution.TotalTimeChange)}");
+
+
+// ========================================
+// FORMATTAGE
+// ========================================
 
 static string FormatRankChange(int change)
 {
     if (change > 0)
     {
-        var word = change == 1 ? "place" : "places";
+        var word =
+            change == 1
+                ? "place"
+                : "places";
+
         return $"+{change} {word}";
     }
 
     if (change < 0)
     {
-        var absolute = Math.Abs(change);
-        var word = absolute == 1 ? "place" : "places";
+        var absolute =
+            Math.Abs(change);
+
+        var word =
+            absolute == 1
+                ? "place"
+                : "places";
+
         return $"-{absolute} {word}";
     }
 
     return "— aucune progression";
 }
 
+
 static string FormatRaceTime(TimeSpan time)
 {
-    return $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+    return
+        $"{(int)time.TotalMinutes}:" +
+        $"{time.Seconds:00}." +
+        $"{time.Milliseconds:000}";
 }
+
 
 static string FormatTimeChange(TimeSpan change)
 {
-    var sign = change < TimeSpan.Zero ? "-" : "+";
-    var absolute = change.Duration();
+    var sign =
+        change < TimeSpan.Zero
+            ? "-"
+            : "+";
 
-    return $"{sign}{absolute.TotalMilliseconds:0} ms";
+    var absolute =
+        change.Duration();
+
+    return
+        $"{sign}" +
+        $"{absolute.TotalMilliseconds:0} ms";
 }
