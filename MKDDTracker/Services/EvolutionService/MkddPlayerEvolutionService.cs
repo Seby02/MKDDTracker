@@ -77,7 +77,8 @@ public sealed class MkddPlayerEvolutionService
         comparison.TotalPlacesGained,
         comparison.PlacesGainedFromOwnImprovement,
         comparison.PlacesGainedFromOthers,
-        comparison.PlayersWhoMoved));
+        comparison.PlayersWhoMoved,
+        comparison.RankImpacts));
         }
 
         if (steps.Count == 0)

@@ -11,4 +11,5 @@ public sealed record MkddPlayerEvolutionStep(
     int TotalPlacesGained,
     int PlacesGainedFromOwnImprovement,
     int PlacesGainedFromOthers,
-    IReadOnlyList<MkddPlayerMovement> Movements);
+    IReadOnlyList<MkddPlayerMovement> Movements,
+    IReadOnlyList<MkddRankImpact> RankImpacts);

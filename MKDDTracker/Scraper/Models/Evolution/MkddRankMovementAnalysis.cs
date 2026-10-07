@@ -13,4 +13,5 @@ public sealed record MkddRankMovementAnalysis(
     int TotalPlacesGained,
     int PlacesGainedFromOwnImprovement,
     int PlacesGainedFromOthers,
-    IReadOnlyList<MkddPlayerMovement> PlayersWhoMoved);
+    IReadOnlyList<MkddPlayerMovement> PlayersWhoMoved,
+    IReadOnlyList<MkddRankImpact> RankImpacts);

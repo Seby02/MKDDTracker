@@ -37,18 +37,69 @@ public sealed class MkddEvolutionConsoleRenderer
                 $"#{step.CounterfactualRank}");
 
             Console.WriteLine(
-                $"  Son chrono : " +
+                $"  Effet de son amélioration : " +
                 $"{FormatPlaces(step.PlacesGainedFromOwnImprovement)}");
 
             Console.WriteLine(
-                $"  Autres     : " +
+                $"  Effet des autres joueurs : " +
                 $"{FormatPlaces(step.PlacesGainedFromOthers)}");
+
+            RenderRankImpacts(step);
 
             Console.WriteLine();
         }
 
         RenderGlobalSummary(report);
         RenderDirectMovements(report);
+    }
+
+    private static void RenderRankImpacts(
+        MkddPlayerEvolutionStep step)
+    {
+        Console.WriteLine();
+
+        Console.WriteLine(
+            "  IMPACT DES AUTRES JOUEURS");
+
+        if (step.RankImpacts.Count == 0)
+        {
+            Console.WriteLine(
+                "    aucun changement d'impact");
+
+            return;
+        }
+
+        var impacts =
+            step.RankImpacts
+                .Where(x => x.RankImpact != 0)
+                .OrderBy(x => x.RankImpact)
+                .ThenBy(x => x.CurrentRank)
+                .ToList();
+
+        if (impacts.Count == 0)
+        {
+            Console.WriteLine(
+                "    aucun changement d'impact");
+
+            return;
+        }
+
+        foreach (var impact in impacts)
+        {
+            Console.WriteLine(
+                $"    - {impact.PlayerName} " +
+                $"#{impact.PreviousRank} -> " +
+                $"#{impact.CurrentRank}");
+
+            Console.WriteLine(
+                $"      Chrono : " +
+                $"{FormatRaceTime(impact.PreviousTime)} -> " +
+                $"{FormatRaceTime(impact.CurrentTime)}");
+
+            Console.WriteLine(
+                $"      Impact : " +
+                $"{FormatPlaces(impact.RankImpact)}");
+        }
     }
 
     private static void RenderGlobalSummary(
@@ -70,11 +121,11 @@ public sealed class MkddEvolutionConsoleRenderer
             $"{FormatPlaces(report.TotalPlacesGained)}");
 
         Console.WriteLine(
-            $"Grace a son chrono : " +
+            $"Grâce à ses améliorations : " +
             $"{FormatPlaces(report.TotalPlacesGainedFromOwnImprovement)}");
 
         Console.WriteLine(
-            $"Grace aux autres : " +
+            $"Effet des autres joueurs : " +
             $"{FormatPlaces(report.TotalPlacesGainedFromOthers)}");
 
         Console.WriteLine(
@@ -85,7 +136,7 @@ public sealed class MkddEvolutionConsoleRenderer
     }
 
     private static void RenderDirectMovements(
-    MkddPlayerEvolutionReport report)
+        MkddPlayerEvolutionReport report)
     {
         Console.WriteLine(
             "JOUEURS DIRECTEMENT CROISES");
@@ -134,11 +185,16 @@ public sealed class MkddEvolutionConsoleRenderer
                         MkddMovementRelation.PlayerPassedTarget)
                     .ToList();
 
-            if (passedPlayers.Count > 0)
+            Console.WriteLine(
+                $"  {report.PlayerName} depasse :");
+
+            if (passedPlayers.Count == 0)
             {
                 Console.WriteLine(
-                    $"  {report.PlayerName} depasse :");
-
+                    "    aucun joueur");
+            }
+            else
+            {
                 foreach (var movement in passedPlayers)
                 {
                     Console.WriteLine(
@@ -160,15 +216,21 @@ public sealed class MkddEvolutionConsoleRenderer
                         $"{FormatMovementCause(
                             movement.Cause,
                             report.PlayerName)}");
-
                 }
             }
 
-            if (playersWhoPassed.Count > 0)
+            Console.WriteLine();
+
+            Console.WriteLine(
+                $"  Joueurs qui depassent {report.PlayerName} :");
+
+            if (playersWhoPassed.Count == 0)
             {
                 Console.WriteLine(
-                    $"  {report.PlayerName} est depasse par :");
-
+                    "    aucun joueur");
+            }
+            else
+            {
                 foreach (var movement in playersWhoPassed)
                 {
                     Console.WriteLine(
@@ -198,8 +260,8 @@ public sealed class MkddEvolutionConsoleRenderer
     }
 
     private static string FormatMovementCause(
-    MkddMovementCause cause,
-    string targetPlayerName)
+        MkddMovementCause cause,
+        string targetPlayerName)
     {
         return cause switch
         {

@@ -105,10 +105,56 @@ public sealed class MkddSnapshotComparisonService
         // -------------------------------------------------
 
         var playersWhoMoved =
-            BuildPlayerMovements(
-                player.Id,
-                previousSnapshot,
-                currentSnapshot);
+    BuildPlayerMovements(
+        player.Id,
+        previousSnapshot,
+        currentSnapshot);
+
+        Console.WriteLine();
+        Console.WriteLine("DEBUG MOUVEMENTS DETECTES");
+
+        foreach (var movement in playersWhoMoved)
+        {
+            Console.WriteLine(
+                $"{movement.PlayerName} : " +
+                $"{movement.PreviousRank} -> {movement.CurrentRank} | " +
+                $"{movement.Relation}");
+        }
+
+        var enzoMovement =
+    playersWhoMoved
+        .SingleOrDefault(x =>
+            x.PlayerName == "Enzo Vusur");
+
+        Console.WriteLine(
+            enzoMovement is null
+                ? "DEBUG ENZO : PAS DE MOUVEMENT"
+                : $"DEBUG ENZO : " +
+                  $"{enzoMovement.PreviousRank} -> " +
+                  $"{enzoMovement.CurrentRank} | " +
+                  $"{enzoMovement.Relation}");
+
+        Console.WriteLine();
+        Console.WriteLine("DEBUG AUTOUR DE MATTLIDE");
+
+        foreach (var performance in currentSnapshot.Performances
+            .OrderBy(x => x.Rank)
+            .Where(x =>
+                x.Rank >= currentPerformance.Rank - 3 &&
+                x.Rank <= currentPerformance.Rank + 3))
+        {
+            Console.WriteLine(
+                $"#{performance.Rank} - " +
+                $"{performance.Player.Name} - " +
+                $"{performance.Time}");
+        }
+
+        var rankImpacts =
+    BuildRankImpacts(
+        player.Id,
+        previousSnapshot,
+        currentSnapshot,
+        currentPerformance.Time);
 
         return new MkddRankMovementAnalysis(
             player.Name,
@@ -129,7 +175,68 @@ public sealed class MkddSnapshotComparisonService
             placesGainedFromOwnImprovement,
             placesGainedFromOthers,
 
-            playersWhoMoved);
+            playersWhoMoved,
+            rankImpacts);
+    }
+
+    private static IReadOnlyList<MkddRankImpact> BuildRankImpacts(
+    int targetPlayerId,
+    MkddSnapshot previousSnapshot,
+    MkddSnapshot currentSnapshot,
+    TimeSpan targetCurrentTime)
+    {
+        var previousByPlayer =
+            previousSnapshot.Performances
+                .Where(x => x.PlayerId != targetPlayerId)
+                .ToDictionary(x => x.PlayerId);
+
+        var currentByPlayer =
+            currentSnapshot.Performances
+                .Where(x => x.PlayerId != targetPlayerId)
+                .ToDictionary(x => x.PlayerId);
+
+        var impacts = new List<MkddRankImpact>();
+
+        foreach (var playerId in previousByPlayer.Keys)
+        {
+            if (!currentByPlayer.TryGetValue(
+                    playerId,
+                    out var current))
+            {
+                continue;
+            }
+
+            var previous = previousByPlayer[playerId];
+
+            var wasAhead =
+                previous.Time < targetCurrentTime;
+
+            var isAhead =
+                current.Time < targetCurrentTime;
+
+            if (wasAhead == isAhead)
+                continue;
+
+            var impact =
+                wasAhead && !isAhead
+                    ? 1
+                    : -1;
+
+            impacts.Add(
+                new MkddRankImpact(
+                    playerId,
+                    previous.Player.Name,
+                    previous.Rank,
+                    current.Rank,
+                    previous.Time,
+                    current.Time,
+                    impact));
+        }
+
+        return impacts
+            .OrderByDescending(x => x.RankImpact)
+            .ThenBy(x => x.CurrentRank)
+            .ToList();
     }
 
     private static IReadOnlyList<MkddPlayerMovement> BuildPlayerMovements(
@@ -159,74 +266,45 @@ public sealed class MkddSnapshotComparisonService
 
         foreach (var playerId in previousByPlayer.Keys)
         {
-            if (!currentByPlayer.TryGetValue(
-                    playerId,
-                    out var current))
+            if (previousByPlayer[playerId].Player.Name == "Enzo Vusur")
             {
-                continue;
+                var previous = previousByPlayer[playerId];
+
+                Console.WriteLine(
+                    $"DEBUG ENZO PREVIOUS : " +
+                    $"PlayerId={playerId}, " +
+                    $"Rank={previous.Rank}, " +
+                    $"Name={previous.Player.Name}");
+
+                if (!currentByPlayer.TryGetValue(
+                        playerId,
+                        out var enzoCurrent))
+                {
+                    Console.WriteLine(
+                        "DEBUG ENZO : ABSENT DE currentByPlayer");
+                }
+                else
+                {
+                    Console.WriteLine(
+                        $"DEBUG ENZO CURRENT : " +
+                        $"PlayerId={enzoCurrent.PlayerId}, " +
+                        $"Rank={enzoCurrent.Rank}, " +
+                        $"Name={enzoCurrent.Player.Name}");
+
+                    var wasAheadBefore =
+                        previous.Rank < targetPrevious.Rank;
+
+                    var isAheadNow =
+                        enzoCurrent.Rank < targetCurrent.Rank;
+
+                    Console.WriteLine(
+                        $"DEBUG ENZO RELATION : " +
+                        $"wasAheadBefore={wasAheadBefore}, " +
+                        $"isAheadNow={isAheadNow}");
+                }
             }
 
-            var previous =
-                previousByPlayer[playerId];
-
-            var wasAheadBefore =
-                previous.Rank < targetPrevious.Rank;
-
-            var isAheadNow =
-                current.Rank < targetCurrent.Rank;
-
-            MkddMovementRelation relation;
-
-            if (wasAheadBefore && !isAheadNow)
-            {
-                relation =
-                    MkddMovementRelation.TargetPassedPlayer;
-            }
-            else if (!wasAheadBefore && isAheadNow)
-            {
-                relation =
-                    MkddMovementRelation.PlayerPassedTarget;
-            }
-            else
-            {
-                relation =
-                    MkddMovementRelation.NoDirectCrossing;
-            }
-
-            var targetImproved =
-    targetCurrent.Time < targetPrevious.Time;
-
-            var opponentImproved =
-                current.Time < previous.Time;
-
-            MkddMovementCause cause;
-
-            if (targetImproved && opponentImproved)
-            {
-                cause = MkddMovementCause.BothImproved;
-            }
-            else if (targetImproved)
-            {
-                cause = MkddMovementCause.TargetDriven;
-            }
-            else
-            {
-                cause = MkddMovementCause.OpponentDriven;
-            }
-
-            movements.Add(
-                new MkddPlayerMovement(
-                    playerId,
-                    previous.Player.Name,
-                    previousSnapshot.RankingDate,
-                    currentSnapshot.RankingDate,
-                    previous.Rank,
-                    current.Rank,
-                    previous.Time,
-                    current.Time,
-                    previous.Rank - current.Rank,
-                    relation,
-                    cause));
+            // ... puis ton code actuel
         }
 
         return movements
