@@ -169,7 +169,8 @@ public sealed class MkddSnapshotComparisonService
                 continue;
             }
 
-            var previous = previousByPlayer[playerId];
+            var previous =
+                previousByPlayer[playerId];
 
             var wasAheadBefore =
                 previous.Rank < targetPrevious.Rank;
@@ -181,21 +182,26 @@ public sealed class MkddSnapshotComparisonService
 
             if (wasAheadBefore && !isAheadNow)
             {
-                relation = MkddMovementRelation.TargetPassedPlayer;
+                relation =
+                    MkddMovementRelation.TargetPassedPlayer;
             }
             else if (!wasAheadBefore && isAheadNow)
             {
-                relation = MkddMovementRelation.PlayerPassedTarget;
+                relation =
+                    MkddMovementRelation.PlayerPassedTarget;
             }
             else
             {
-                relation = MkddMovementRelation.NoDirectCrossing;
+                relation =
+                    MkddMovementRelation.NoDirectCrossing;
             }
 
             movements.Add(
                 new MkddPlayerMovement(
                     playerId,
                     previous.Player.Name,
+                    previousSnapshot.RankingDate,
+                    currentSnapshot.RankingDate,
                     previous.Rank,
                     current.Rank,
                     previous.Time,
@@ -205,6 +211,9 @@ public sealed class MkddSnapshotComparisonService
         }
 
         return movements
+            .Where(x =>
+                x.Relation !=
+                MkddMovementRelation.NoDirectCrossing)
             .OrderBy(x => x.CurrentRank)
             .ToList();
     }

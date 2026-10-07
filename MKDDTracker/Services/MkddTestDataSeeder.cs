@@ -15,11 +15,36 @@ public sealed class MkddTestDataSeeder
         _db = db;
     }
 
+    private static TimeSpan GetBestTimeSoFar(
+        int playerId,
+        DateOnly date,
+        IReadOnlyDictionary<(int PlayerId, DateOnly Date), TimeSpan> overrides,
+        TimeSpan originalTime)
+    {
+        var bestTime = originalTime;
+
+        foreach (var entry in overrides)
+        {
+            if (entry.Key.PlayerId != playerId)
+                continue;
+
+            if (entry.Key.Date > date)
+                continue;
+
+            if (entry.Value < bestTime)
+            {
+                bestTime = entry.Value;
+            }
+        }
+
+        return bestTime;
+    }
+
     public async Task SeedAsync(
-    string courseName,
-    string mattildeName,
-    string enzoName,
-    IReadOnlyList<MkddPerformance> originalPerformances)
+        string courseName,
+        string mattildeName,
+        string enzoName,
+        IReadOnlyList<MkddPerformance> originalPerformances)
     {
         var course = await _db.Courses
             .SingleOrDefaultAsync(x => x.Name == courseName);
@@ -50,6 +75,70 @@ public sealed class MkddTestDataSeeder
             new DateOnly(2026, 9, 22)
         };
 
+        // -------------------------------------------------
+        // SCENARIOS DE TEST
+        // -------------------------------------------------
+        //
+        // IMPORTANT :
+        // Une valeur ici représente une nouvelle performance
+        // réalisée à cette date.
+        //
+        // GetBestTimeSoFar() conservera automatiquement
+        // le meilleur temps historique.
+        //
+        // Ainsi :
+        //
+        // 1:14.500 -> 1:14.700
+        //
+        // deviendra automatiquement :
+        //
+        // 1:14.500 -> 1:14.500
+        //
+        // -------------------------------------------------
+
+        var timeOverrides =
+            new Dictionary<(int PlayerId, DateOnly Date), TimeSpan>
+            {
+                // -----------------------------------------
+                // MATTILDE
+                // -----------------------------------------
+
+                [(mattilde.Id, new DateOnly(2026, 9, 1))] =
+                    TimeSpan.FromMilliseconds(74_642),
+
+                [(mattilde.Id, new DateOnly(2026, 9, 8))] =
+                    TimeSpan.FromMilliseconds(74_510),
+
+                [(mattilde.Id, new DateOnly(2026, 9, 15))] =
+                    TimeSpan.FromMilliseconds(74_401),
+
+                [(mattilde.Id, new DateOnly(2026, 9, 22))] =
+                    TimeSpan.FromMilliseconds(74_210),
+
+                // -----------------------------------------
+                // ENZO
+                // -----------------------------------------
+                //
+                // Enzo commence devant Mattilde.
+                // Il améliore ensuite son record.
+                //
+                // Son temps du 22/09 reste à 1:14.200
+                // malgré l'absence de nouvelle amélioration.
+                // -----------------------------------------
+
+                [(enzo.Id, new DateOnly(2026, 9, 1))] =
+                    TimeSpan.FromMilliseconds(74_500),
+
+                [(enzo.Id, new DateOnly(2026, 9, 8))] =
+                    TimeSpan.FromMilliseconds(74_500),
+
+                [(enzo.Id, new DateOnly(2026, 9, 15))] =
+                    TimeSpan.FromMilliseconds(74_200),
+
+                [(enzo.Id, new DateOnly(2026, 9, 22))] =
+                    TimeSpan.FromMilliseconds(74_200)
+            };
+
         foreach (var date in dates)
         {
             var exists = await _db.Snapshots
@@ -68,7 +157,11 @@ public sealed class MkddTestDataSeeder
                     new TimeOnly(12, 0))
             };
 
-            var temporaryPerformances = new List<(int PlayerId, TimeSpan Time, DateOnly RecordDate)>();
+            var temporaryPerformances =
+                new List<(
+                    int PlayerId,
+                    TimeSpan Time,
+                    DateOnly RecordDate)>();
 
             foreach (var original in originalPerformances)
             {
@@ -79,94 +172,34 @@ public sealed class MkddTestDataSeeder
                 if (player is null)
                     continue;
 
-                var time = original.Time;
-
-                // -----------------------------------------
-                // MATTILDE
-                // -----------------------------------------
-
-                if (player.Id == mattilde.Id)
-                {
-                    switch (date)
-                    {
-                        case { Year: 2026, Month: 9, Day: 1 }:
-                            time = TimeSpan.FromMilliseconds(74_642);
-                            break;
-
-                        case { Year: 2026, Month: 9, Day: 8 }:
-                            time = TimeSpan.FromMilliseconds(74_510);
-                            break;
-
-                        case { Year: 2026, Month: 9, Day: 15 }:
-                            time = TimeSpan.FromMilliseconds(74_401);
-                            break;
-
-                        case { Year: 2026, Month: 9, Day: 22 }:
-                            time = TimeSpan.FromMilliseconds(74_210);
-                            break;
-                    }
-                }
-
-                // -----------------------------------------
-                // ENZO
-                // -----------------------------------------
-
-                // Enzo sert ici à simuler un joueur qui était devant Mattilde
-                // puis qui passe derrière elle.
-                if (player.Id == enzo.Id)
-                {
-                    switch (date)
-                    {
-                        case { Year: 2026, Month: 9, Day: 1 }:
-                            time = TimeSpan.FromMilliseconds(74_500);
-                            break;
-
-                        case { Year: 2026, Month: 9, Day: 8 }:
-                            time = TimeSpan.FromMilliseconds(74_700);
-                            break;
-
-                        case { Year: 2026, Month: 9, Day: 15 }:
-                            time = TimeSpan.FromMilliseconds(74_200);
-                            break;
-
-                        case { Year: 2026, Month: 9, Day: 22 }:
-                            time = TimeSpan.FromMilliseconds(74_500);
-                            break;
-                    }
-                }
-
-                // -----------------------------------------
-                // AUTRES JOUEURS
-                // -----------------------------------------
-
-                if (player.Id != mattilde.Id &&
-                    player.Id != enzo.Id)
-                {
-                    // Le joueur actuellement autour de Mattilde
-                    // va volontairement ralentir pendant la dernière semaine.
-                    //
-                    // On identifie ici le joueur qui avait le rang 3
-                    // dans les données originales.
-                    if (original.Rank == 3 &&
-                        date == new DateOnly(2026, 9, 22))
-                    {
-                        time = TimeSpan.FromMilliseconds(74_500);
-                    }
-                }
+                var time = GetBestTimeSoFar(
+                    player.Id,
+                    date,
+                    timeOverrides,
+                    original.Time);
 
                 temporaryPerformances.Add(
-    (
-        player.Id,
-        time,
-        original.RecordDate
-    ));
+                    (
+                        player.Id,
+                        time,
+                        original.RecordDate
+                    ));
             }
 
-            var orderedPerformances = temporaryPerformances.OrderBy(x => x.Time).ToList();
+            // -------------------------------------------------
+            // CALCUL DU CLASSEMENT
+            // -------------------------------------------------
+
+            var orderedPerformances =
+                temporaryPerformances
+                    .OrderBy(x => x.Time)
+                    .ThenBy(x => x.PlayerId)
+                    .ToList();
 
             for (var i = 0; i < orderedPerformances.Count; i++)
             {
-                var performance = orderedPerformances[i];
+                var performance =
+                    orderedPerformances[i];
 
                 snapshot.Performances.Add(
                     new MkddPerformanceEntity
