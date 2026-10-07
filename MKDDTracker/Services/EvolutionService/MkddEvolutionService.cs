@@ -17,7 +17,9 @@ public sealed class MkddEvolutionService
 
     public async Task<MkddPlayerEvolution?> GetPlayerEvolutionAsync(
         string playerName,
-        string courseName)
+        string courseName,
+        DateOnly? startDate = null,
+        DateOnly? endDate = null)
     {
         var player = await _db.Players
             .SingleOrDefaultAsync(x => x.Name == playerName);
@@ -36,12 +38,16 @@ public sealed class MkddEvolutionService
         }
 
         var performances = await _db.Performances
-            .Include(x => x.Snapshot)
-            .Where(x =>
-                x.PlayerId == player.Id &&
-                x.Snapshot.CourseId == course.Id)
-            .OrderBy(x => x.Snapshot.CapturedAt)
-            .ToListAsync();
+    .Include(x => x.Snapshot)
+    .Where(x =>
+        x.PlayerId == player.Id &&
+        x.Snapshot.CourseId == course.Id &&
+        (!startDate.HasValue ||
+            x.Snapshot.RankingDate >= startDate.Value) &&
+        (!endDate.HasValue ||
+            x.Snapshot.RankingDate <= endDate.Value))
+    .OrderBy(x => x.Snapshot.RankingDate)
+    .ToListAsync();
 
         if (performances.Count == 0)
         {
@@ -66,13 +72,12 @@ public sealed class MkddEvolutionService
                     performance.Time - previous.Time;
             }
 
-            points.Add(
-                new MkddPlayerEvolutionPoint(
-                    performance.Snapshot.RankingDate,
-                    performance.Rank,
-                    performance.Time,
-                    rankChange,
-                    timeChange));
+            points.Add(new MkddPlayerEvolutionPoint(
+    performance.Snapshot.RankingDate,
+    performance.Rank,
+    performance.Time,
+    rankChange,
+    timeChange));
 
             previous = performance;
         }
