@@ -1,8 +1,12 @@
 ﻿@page "/evolution"
 @rendermode InteractiveServer
 
+@using Microsoft.EntityFrameworkCore
+@using MKDDTracker.Scraper.Data.Database
 @using MKDDTracker.Scraper.Models.Evolution
 @using MKDDTracker.Scraper.Services.EvolutionService
+
+@inject IDbContextFactory<MkddDbContext> DbFactory
 @inject MkddPlayerEvolutionService EvolutionService
 @inject MkddEvolutionReportService ReportService
 
@@ -10,128 +14,297 @@
 
 <h1>Évolution des joueurs</h1>
 
-@if (loading)
+<div class="card mb-4">
+    <div class="card-body">
+        <h4 class="mb-3">Critères d'analyse</h4>
+
+        <div class="row g-3">
+            <div class="col-md-6">
+                <label class="form-label">Joueur</label>
+
+                <select class="form-select" @bind="selectedPlayer">
+                    @foreach (var player in players)
+                    {
+                        <option value="@player">@player</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Circuit</label>
+
+                <select class="form-select" @bind="selectedCourse">
+                    @foreach (var course in courses)
+                    {
+                        <option value="@course">@course</option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Date de début</label>
+
+                <InputDate class="form-control"
+                           @bind-Value="startDate" />
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Date de fin</label>
+
+                <InputDate class="form-control"
+                           @bind-Value="endDate" />
+            </div>
+
+            <div class="col-12">
+                <button class="btn btn-primary"
+                        @onclick="AnalyzeAsync"
+                        disabled="@loading">
+                    @(loading ? "Analyse en cours..." : "Analyser")
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
 {
-    <p>Chargement des données...</p>
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else if (loading)
+{
+    <p>Chargement de l'évolution...</p>
 }
 else if (report is null)
 {
-    <p>Aucune évolution trouvée pour cette période.</p>
+    <div class="alert alert-info">
+        Aucune évolution disponible pour ces critères.
+        Il faut au moins deux snapshots comparables
+        sur la période sélectionnée.
+    </div>
 }
 else
 {
     <h2>@report.PlayerName — @report.CourseName</h2>
 
-    <div class="row mb-4">
-        <div class="col-md-4">
-            <div class="card p-3">
-                <h5>Classement actuel</h5>
-                <h2>#@report.Steps[^1].CurrentRank</h2>
-            </div>
-        </div>
+    @if (report.Steps.Count > 0)
+    {
+        var firstStep = report.Steps[0];
+        var lastStep = report.Steps[^1];
 
-        <div class="col-md-4">
-            <div class="card p-3">
-                <h5>Progression</h5>
-                <h2>@FormatPlaces(report.TotalPlacesGained)</h2>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6>Classement actuel</h6>
+                        <h2>#@lastStep.CurrentRank</h2>
+                    </div>
+                </div>
             </div>
-        </div>
 
-        <div class="col-md-4">
-            <div class="card p-3">
-                <h5>Meilleur chrono</h5>
-                <h2>@FormatRaceTime(report.Steps[^1].CurrentTime)</h2>
+            <div class="col-md-4">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6>Progression totale</h6>
+                        <h2>
+                            @FormatPlaces(
+                            firstStep.PreviousRank -
+                            lastStep.CurrentRank)
+                </h2>
             </div>
         </div>
     </div>
 
-    <h3>Historique</h3>
-
-    @foreach (var step in report.Steps)
-    {
-        <div class="card mb-3">
+    <div class="col-md-4">
+        <div class="card h-100">
             <div class="card-body">
-                <h5>
-                    @step.PreviousDate.ToString("dd/MM/yyyy")
-                    →
-                    @step.CurrentDate.ToString("dd/MM/yyyy")
-                </h5>
-
-                <p>
-                    Classement :
-                    #@step.PreviousRank → #@step.CurrentRank
-                    (@FormatPlaces(step.TotalPlacesGained))
-                </p>
-
-                <p>
-                    Chrono :
-                    @FormatRaceTime(step.PreviousTime)
-                    →
-                    @FormatRaceTime(step.CurrentTime)
-                </p>
-
-                <p>
-                    Progression personnelle :
-                    <strong>
-                        @FormatPlaces(step.PlacesGainedFromOwnImprovement)
-                    </strong>
-                </p>
-
-                <p>
-                    Effet des autres joueurs :
-                    <strong>
-                        @FormatPlaces(step.PlacesGainedFromOthers)
-                    </strong>
-                </p>
-
-                @if (step.RankImpacts.Count > 0)
-                {
-                    <h6>Impacts des autres joueurs</h6>
-
-                    @foreach (var impact in step.RankImpacts
-                            .OrderBy(x => x.RankImpact)
-                            .ThenBy(x => x.CurrentRank))
-                    {
-                        <div class="alert alert-secondary">
-                            <strong>@impact.PlayerName</strong>
-                            (#@impact.PreviousRank → #@impact.CurrentRank)
-
-                            <div>
-                                @FormatRaceTime(impact.PreviousTime)
-                                →
-                                @FormatRaceTime(impact.CurrentTime)
-                            </div>
-
-                            <div>
-                                Impact :
-                                <strong>@FormatPlaces(impact.RankImpact)</strong>
-                            </div>
-                        </div>
-                    }
-                }
+                <h6>Chrono actuel</h6>
+                <h2>@FormatRaceTime(lastStep.CurrentTime)</h2>
             </div>
         </div>
+    </div>
+</div>
+
+<h3>Historique des évolutions</h3>
+
+@foreach (var step in report.Steps)
+        {
+            <div class="card mb-3">
+                <div class="card-body">
+                    <h5>
+                        @step.PreviousDate.ToString("dd/MM/yyyy")
+                        →
+                        @step.CurrentDate.ToString("dd/MM/yyyy")
+                    </h5>
+
+                    <p>
+                        Classement :
+                        <strong>
+                            #@step.PreviousRank
+                            →
+                            #@step.CurrentRank
+                        </strong>
+                        (@FormatPlaces(step.TotalPlacesGained))
+                    </p>
+
+                    <p>
+                        Chrono :
+                        <strong>
+                            @FormatRaceTime(step.PreviousTime)
+                            →
+                            @FormatRaceTime(step.CurrentTime)
+                        </strong>
+                    </p>
+
+                    <p>
+                        Progression personnelle :
+                        <strong>
+                            @FormatPlaces(
+                            step.PlacesGainedFromOwnImprovement)
+            </strong>
+        </p>
+
+        <p>
+            Effet des autres joueurs :
+            <strong>
+                @FormatPlaces(
+                                step.PlacesGainedFromOthers)
+            </strong>
+        </p>
+
+        @if (step.RankImpacts.Count > 0)
+                    {
+                        <h6>Impacts des autres joueurs</h6>
+
+                        @foreach (var impact in step.RankImpacts
+                                .OrderBy(x => x.RankImpact)
+                                .ThenBy(x => x.CurrentRank))
+                        {
+                            <div class="alert alert-secondary">
+                                <strong>@impact.PlayerName</strong>
+
+                                <div>
+                                    Rang :
+                                    #@impact.PreviousRank
+                                    →
+                                    #@impact.CurrentRank
+                                </div>
+
+                                <div>
+                                    Chrono :
+                                    @FormatRaceTime(impact.PreviousTime)
+                                    →
+                                    @FormatRaceTime(impact.CurrentTime)
+                                </div>
+
+                                <div>
+                                    Impact :
+                                    <strong>
+                                        @FormatPlaces(impact.RankImpact)
+                                    </strong>
+                                </div>
+                            </div>
+                        }
+                    }
+                </div>
+            </div>
+        }
     }
 }
 
 @code {
+    private List<string> players = [];
+    private List<string> courses = [];
+
+    private string selectedPlayer = "";
+    private string selectedCourse = "";
+
+    private DateTime startDate = new(2026, 9, 1);
+    private DateTime endDate = new(2026, 9, 22);
+
     private MkddPlayerEvolutionReport? report;
-    private bool loading = true;
+
+    private bool loading;
+    private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            players = await db.Players
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => x.Name)
+                .ToListAsync();
+
+            courses = await db.Courses
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => x.Name)
+                .ToListAsync();
+
+            selectedPlayer = players.Contains("Mattilde F")
+                ? "Mattilde F"
+                : players.FirstOrDefault() ?? "";
+
+            selectedCourse = courses.Contains("Luigi Circuit")
+                ? "Luigi Circuit"
+                : courses.FirstOrDefault() ?? "";
+
+            if (players.Count > 0 && courses.Count > 0)
+            {
+                await AnalyzeAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task AnalyzeAsync()
+    {
+        if (loading)
+            return;
+
+        errorMessage = null;
+        report = null;
+
+        if (string.IsNullOrWhiteSpace(selectedPlayer) ||
+            string.IsNullOrWhiteSpace(selectedCourse))
+        {
+            errorMessage = "Sélectionne un joueur et un circuit.";
+            return;
+        }
+
+        if (startDate.Date > endDate.Date)
+        {
+            errorMessage =
+                "La date de début doit précéder la date de fin.";
+            return;
+        }
+
+        loading = true;
+
+        try
+        {
             var evolution = await EvolutionService.AnalyzeAsync(
-                "Mattilde F",
-                "Luigi Circuit",
-                new DateOnly(2026, 9, 1),
-                new DateOnly(2026, 9, 22));
+                selectedPlayer,
+                selectedCourse,
+                DateOnly.FromDateTime(startDate),
+                DateOnly.FromDateTime(endDate));
 
             if (evolution is not null)
             {
                 report = ReportService.BuildReport(evolution);
             }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
         }
         finally
         {
@@ -141,7 +314,9 @@ else
 
     private static string FormatPlaces(int places)
     {
-        return places > 0 ? $"+{places}" : places.ToString();
+        return places > 0
+            ? $"+{places}"
+            : places.ToString();
     }
 
     private static string FormatRaceTime(TimeSpan time)

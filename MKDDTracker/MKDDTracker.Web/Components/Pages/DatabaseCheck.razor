@@ -1,0 +1,52 @@
+﻿@page "/database-check"
+@using MKDDTracker.Scraper.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@using MKDDTracker.Scraper.Data.Database
+@inject IDbContextFactory<MkddDbContext> DbFactory
+
+<h1>Vérification de la base</h1>
+
+@if (snapshots is null)
+{
+    <p>Chargement...</p>
+}
+else
+{
+    <p>Nombre de snapshots : @snapshots.Count</p>
+
+    <table class="table">
+        <thead>
+            <tr>
+                <th>Circuit</th>
+                <th>Date</th>
+                <th>Performances</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var snapshot in snapshots)
+            {
+                <tr>
+                    <td>@snapshot.Course.Name</td>
+                    <td>@snapshot.RankingDate.ToString("dd/MM/yyyy")</td>
+                    <td>@snapshot.Performances.Count</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<MkddSnapshot>? snapshots;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        snapshots = await db.Snapshots
+            .AsNoTracking()
+            .Include(x => x.Course)
+            .Include(x => x.Performances)
+            .OrderByDescending(x => x.RankingDate)
+            .ToListAsync();
+    }
+}

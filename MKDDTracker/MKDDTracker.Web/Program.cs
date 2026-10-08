@@ -31,6 +31,7 @@ builder.Services.AddDbContextFactory<MkddDbContext>(options =>
 builder.Services.AddScoped<MkddSnapshotComparisonService>();
 builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
+builder.Services.AddScoped<MkddSnapshotImportService>();
 
 var app = builder.Build();
 

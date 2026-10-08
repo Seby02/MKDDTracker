@@ -1,0 +1,159 @@
+﻿@page "/import"
+@rendermode InteractiveServer
+
+@using Microsoft.AspNetCore.Components.Forms
+@using MKDDTracker.Scraper.Services.SnapshotService
+
+@inject MkddSnapshotImportService ImportService
+
+<PageTitle>Importer un classement - MKDD Tracker</PageTitle>
+
+<h1>Importer un classement</h1>
+
+<p class="text-muted">
+    Importe un fichier HTML de classement Mario Kart Double Dash
+    pour enregistrer un nouveau snapshot dans SQLite.
+</p>
+
+<div class="card">
+    <div class="card-body">
+
+        <div class="mb-3">
+            <label class="form-label">Nom du circuit</label>
+
+            <input class="form-control"
+                   @bind="courseName"
+                   placeholder="Exemple : Peach Beach" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Date du classement</label>
+
+            <InputDate class="form-control"
+                       @bind-Value="rankingDate" />
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Fichier HTML</label>
+
+            <InputFile class="form-control"
+                       OnChange="OnFileSelected"
+                       accept=".html,.htm" />
+        </div>
+
+        @if (!string.IsNullOrWhiteSpace(selectedFileName))
+        {
+            <p class="text-muted">
+                Fichier sélectionné :
+                <strong>@selectedFileName</strong>
+            </p>
+        }
+
+        <button class="btn btn-primary"
+                @onclick="ImportAsync"
+                disabled="@isImporting">
+
+            @(isImporting ? "Importation..." : "Importer le snapshot")
+
+        </button>
+
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger mt-3">
+        @errorMessage
+    </div>
+}
+
+@if (!string.IsNullOrWhiteSpace(successMessage))
+{
+    <div class="alert alert-success mt-3">
+        @successMessage
+    </div>
+}
+
+@code {
+    private string courseName = "";
+    private DateTime rankingDate = DateTime.Today;
+
+    private IBrowserFile? selectedFile;
+    private string? selectedFileName;
+
+    private bool isImporting;
+
+    private string? errorMessage;
+    private string? successMessage;
+
+    private void OnFileSelected(InputFileChangeEventArgs e)
+    {
+        selectedFile = e.File;
+        selectedFileName = selectedFile.Name;
+
+        errorMessage = null;
+        successMessage = null;
+    }
+
+    private async Task ImportAsync()
+    {
+        if (isImporting)
+            return;
+
+        errorMessage = null;
+        successMessage = null;
+
+        if (string.IsNullOrWhiteSpace(courseName))
+        {
+            errorMessage = "Indique le nom du circuit.";
+            return;
+        }
+
+        if (selectedFile is null)
+        {
+            errorMessage = "Sélectionne un fichier HTML.";
+            return;
+        }
+
+        if (!selectedFile.Name.EndsWith(".html",
+                StringComparison.OrdinalIgnoreCase) &&
+            !selectedFile.Name.EndsWith(".htm",
+                StringComparison.OrdinalIgnoreCase))
+        {
+            errorMessage = "Le fichier doit être au format HTML.";
+            return;
+        }
+
+        isImporting = true;
+
+        try
+        {
+            const long maxFileSize = 5 * 1024 * 1024;
+
+            await using var stream =
+                selectedFile.OpenReadStream(maxFileSize);
+
+            using var reader = new StreamReader(stream);
+
+            var html = await reader.ReadToEndAsync();
+
+            var count = await ImportService.ImportAsync(
+                courseName,
+                html,
+                DateOnly.FromDateTime(rankingDate));
+
+            successMessage =
+                $"Importation réussie : {count} performances " +
+                $"enregistrées pour {courseName} " +
+                $"au {rankingDate:dd/MM/yyyy}.";
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+}
