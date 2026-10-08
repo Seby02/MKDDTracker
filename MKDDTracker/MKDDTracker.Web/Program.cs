@@ -1,10 +1,36 @@
 using MKDDTracker.Web.Components;
+using Microsoft.EntityFrameworkCore;
+using MKDDTracker.Scraper.Data.Database;
+using MKDDTracker.Scraper.Services.SnapshotService;
+using MKDDTracker.Scraper.Services.EvolutionService;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Add services to the container.
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
+
+var databasePath = Path.GetFullPath(
+    Path.Combine(
+        builder.Environment.ContentRootPath,
+        "..",
+        "bin",
+        "Debug",
+        "net9.0",
+        "mkddtracker.db"));
+
+if (!File.Exists(databasePath))
+{
+    throw new FileNotFoundException(
+        $"Base MKDD introuvable : {databasePath}");
+}
+
+builder.Services.AddDbContextFactory<MkddDbContext>(options =>
+    options.UseSqlite($"Data Source={databasePath}"));
+
+builder.Services.AddScoped<MkddSnapshotComparisonService>();
+builder.Services.AddScoped<MkddPlayerEvolutionService>();
+builder.Services.AddScoped<MkddEvolutionReportService>();
 
 var app = builder.Build();
 

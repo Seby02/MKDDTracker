@@ -13,10 +13,9 @@ public sealed class MkddDbContext : DbContext
 
     public DbSet<MkddPerformanceEntity> Performances => Set<MkddPerformanceEntity>();
 
-    protected override void OnConfiguring(
-        DbContextOptionsBuilder optionsBuilder)
+    public MkddDbContext(DbContextOptions<MkddDbContext> options)
+        : base(options)
     {
-        optionsBuilder.UseSqlite("Data Source=mkddtracker.db");
     }
 
     protected override void OnModelCreating(

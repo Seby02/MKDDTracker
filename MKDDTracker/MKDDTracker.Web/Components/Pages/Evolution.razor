@@ -1,0 +1,151 @@
+﻿@page "/evolution"
+@rendermode InteractiveServer
+
+@using MKDDTracker.Scraper.Models.Evolution
+@using MKDDTracker.Scraper.Services.EvolutionService
+@inject MkddPlayerEvolutionService EvolutionService
+@inject MkddEvolutionReportService ReportService
+
+<PageTitle>Évolution - MKDD Tracker</PageTitle>
+
+<h1>Évolution des joueurs</h1>
+
+@if (loading)
+{
+    <p>Chargement des données...</p>
+}
+else if (report is null)
+{
+    <p>Aucune évolution trouvée pour cette période.</p>
+}
+else
+{
+    <h2>@report.PlayerName — @report.CourseName</h2>
+
+    <div class="row mb-4">
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h5>Classement actuel</h5>
+                <h2>#@report.Steps[^1].CurrentRank</h2>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h5>Progression</h5>
+                <h2>@FormatPlaces(report.TotalPlacesGained)</h2>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card p-3">
+                <h5>Meilleur chrono</h5>
+                <h2>@FormatRaceTime(report.Steps[^1].CurrentTime)</h2>
+            </div>
+        </div>
+    </div>
+
+    <h3>Historique</h3>
+
+    @foreach (var step in report.Steps)
+    {
+        <div class="card mb-3">
+            <div class="card-body">
+                <h5>
+                    @step.PreviousDate.ToString("dd/MM/yyyy")
+                    →
+                    @step.CurrentDate.ToString("dd/MM/yyyy")
+                </h5>
+
+                <p>
+                    Classement :
+                    #@step.PreviousRank → #@step.CurrentRank
+                    (@FormatPlaces(step.TotalPlacesGained))
+                </p>
+
+                <p>
+                    Chrono :
+                    @FormatRaceTime(step.PreviousTime)
+                    →
+                    @FormatRaceTime(step.CurrentTime)
+                </p>
+
+                <p>
+                    Progression personnelle :
+                    <strong>
+                        @FormatPlaces(step.PlacesGainedFromOwnImprovement)
+                    </strong>
+                </p>
+
+                <p>
+                    Effet des autres joueurs :
+                    <strong>
+                        @FormatPlaces(step.PlacesGainedFromOthers)
+                    </strong>
+                </p>
+
+                @if (step.RankImpacts.Count > 0)
+                {
+                    <h6>Impacts des autres joueurs</h6>
+
+                    @foreach (var impact in step.RankImpacts
+                            .OrderBy(x => x.RankImpact)
+                            .ThenBy(x => x.CurrentRank))
+                    {
+                        <div class="alert alert-secondary">
+                            <strong>@impact.PlayerName</strong>
+                            (#@impact.PreviousRank → #@impact.CurrentRank)
+
+                            <div>
+                                @FormatRaceTime(impact.PreviousTime)
+                                →
+                                @FormatRaceTime(impact.CurrentTime)
+                            </div>
+
+                            <div>
+                                Impact :
+                                <strong>@FormatPlaces(impact.RankImpact)</strong>
+                            </div>
+                        </div>
+                    }
+                }
+            </div>
+        </div>
+    }
+}
+
+@code {
+    private MkddPlayerEvolutionReport? report;
+    private bool loading = true;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var evolution = await EvolutionService.AnalyzeAsync(
+                "Mattilde F",
+                "Luigi Circuit",
+                new DateOnly(2026, 9, 1),
+                new DateOnly(2026, 9, 22));
+
+            if (evolution is not null)
+            {
+                report = ReportService.BuildReport(evolution);
+            }
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private static string FormatPlaces(int places)
+    {
+        return places > 0 ? $"+{places}" : places.ToString();
+    }
+
+    private static string FormatRaceTime(TimeSpan time)
+    {
+        return $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+    }
+}

@@ -73,7 +73,11 @@ Console.WriteLine(
 // DATABASE
 // ========================================
 
-await using var db = new MkddDbContext();
+var options = new DbContextOptionsBuilder<MkddDbContext>()
+    .UseSqlite("Data Source=mkddtracker.db")
+    .Options;
+
+using var db = new MkddDbContext(options);
 
 await db.Database.EnsureCreatedAsync();
 
