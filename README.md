@@ -255,7 +255,8 @@ La collecte directe depuis le site, l'automatisation des snapshots et les intég
 - [x] Analyse du HTML de Luigi Circuit.
 - [x] Création du parser `MkddCoursePageParser`.
 - [x] Mise en place de fichiers HTML locaux pour le développement.
-- [ ] Validation complète du parsing sur plusieurs pages.
+- [x] Validation initiale du parsing sur plusieurs circuits (Luigi Circuit et Peach Beach).
+- [ ] Validation complète du parsing sur plusieurs structures de pages HTML.
 - [ ] Gestion robuste des variations HTML et des erreurs.
 - [ ] Tests automatisés du parser.
 
@@ -263,6 +264,8 @@ La collecte directe depuis le site, l'automatisation des snapshots et les intég
 
 - [x] Mise en place des premiers modèles de joueurs et de circuits.
 - [x] Structure initiale pour représenter les performances.
+- [x] Prise en charge initiale de plusieurs circuits.
+- [x] Importation des 100 premières performances de Luigi Circuit et Peach Beach.
 - [ ] Prise en charge complète des 16 circuits.
 - [ ] Gestion des courses complètes et des tours individuels.
 - [ ] Gestion des classements Any Hz, 50 Hz et 60 Hz.
@@ -280,10 +283,12 @@ La collecte directe depuis le site, l'automatisation des snapshots et les intég
 - [x] Création des services de gestion des snapshots.
 - [x] Création d'un service d'import des snapshots.
 - [x] Création d'un service de comparaison des snapshots.
-- [ ] Validation du stockage et de la récupération des performances.
-- [ ] Validation des comparaisons sur des données réelles.
+- [x] Validation du stockage et de la récupération des performances.
+- [x] Validation de la persistance de plusieurs snapshots pour un même circuit.
+- [x] Vérification des données enregistrées via une page Blazor dédiée.
+- [ ] Validation des comparaisons sur plusieurs snapshots réels.
 - [ ] Planification de snapshots périodiques.
-- [ ] Gestion des doublons et de l'intégrité historique.
+- [ ] Gestion complète des doublons et de l'intégrité historique.
 
 ### Phase 4 — Analyse et évolution des joueurs
 
@@ -292,26 +297,38 @@ La collecte directe depuis le site, l'automatisation des snapshots et les intég
 - [x] Création des modèles d'analyse des mouvements de classement.
 - [x] Création d'un service de génération de rapports d'évolution.
 - [x] Création d'un moteur de restitution des résultats en console.
-- [ ] Validation des calculs sur des snapshots réels.
-- [ ] Analyse détaillée des gains et pertes de positions.
+- [x] Implémentation de l'analyse des gains et pertes de positions.
+- [x] Distinction entre les positions gagnées par amélioration personnelle et les mouvements des autres joueurs.
+- [x] Création d'un graphique d'évolution du classement.
+- [x] Création d'un graphique d'évolution des chronos.
+- [x] Analyse de l'évolution sur une période sélectionnée.
+- [ ] Validation des calculs sur plusieurs snapshots réels.
 - [ ] Comparaison entre plusieurs joueurs.
-- [ ] Statistiques individuelles et communautaires.
-- [ ] Graphiques d'évolution sur différentes périodes.
+- [ ] Statistiques individuelles et communautaires avancées.
 
 ### Phase 5 — Interface web et visualisation
 
 - [x] Création du projet `MKDDTracker.Web`.
-- [x] Mise en place de Blazor.
+- [x] Mise en place de Blazor Interactive Server.
+- [x] Connexion de l'application web à la base SQLite existante.
 - [x] Création de la page d'accueil.
-- [x] Création de la page des classements (`Ranking`).
-- [x] Création de la page d'évolution (`Evolution`).
-- [x] Création de la page d'import (`Import`).
-- [x] Création d'une page de vérification de la base de données.
-- [ ] Validation fonctionnelle des pages sur des données réelles.
-- [ ] Création de graphiques interactifs.
-- [ ] Recherche et consultation des profils des joueurs.
-- [ ] Amélioration de l'expérience utilisateur.
-- [ ] Tableaux de bord et statistiques avancées.
+- [x] Création de la page des classements (`/classements`).
+- [x] Création de la page d'évolution (`/evolution`).
+- [x] Création de la page d'import (`/import`).
+- [x] Création d'une page de vérification de la base de données (`/database-check`).
+- [x] Validation initiale des pages avec des classements HTML réels.
+- [x] Ajout de la sélection dynamique des joueurs et des circuits.
+- [x] Ajout de la recherche de joueurs dans les classements.
+- [x] Consultation des classements par circuit et par date.
+- [x] Création de graphiques d'évolution du classement et des chronos.
+- [x] Création d'un tableau de bord avec statistiques principales.
+- [x] Affichage des derniers snapshots sur le tableau de bord.
+- [x] Ajout de raccourcis vers les fonctionnalités principales.
+- [ ] Création d'une page de recherche et de consultation des profils des joueurs.
+- [ ] Amélioration du design et de l'expérience utilisateur.
+- [ ] Ajout de statistiques avancées au tableau de bord.
+- [ ] Ajout d'interactions avancées aux graphiques (infobulles, zoom, etc.).
+- [ ] Tests fonctionnels et de robustesse approfondis.
 
 ### Phase 6 — Automatisation et intégrations
 
@@ -566,7 +583,8 @@ Direct website collection, automated snapshots, and external integrations are pl
 - [x] Analyze Luigi Circuit HTML.
 - [x] Implement `MkddCoursePageParser`.
 - [x] Set up local HTML samples for development.
-- [ ] Fully validate parsing across multiple pages.
+- [x] Perform initial parsing validation across multiple courses (Luigi Circuit and Peach Beach).
+- [ ] Fully validate parsing across different HTML page structures.
 - [ ] Improve handling of HTML variations and errors.
 - [ ] Add automated parser tests.
 
@@ -574,6 +592,8 @@ Direct website collection, automated snapshots, and external integrations are pl
 
 - [x] Create initial player and course models.
 - [x] Establish the performance data structure.
+- [x] Add initial support for multiple courses.
+- [x] Import the top 100 performances from Luigi Circuit and Peach Beach.
 - [ ] Support all 16 courses.
 - [ ] Support full-course and fastest-lap records.
 - [ ] Support Any Hz, 50 Hz, and 60 Hz rankings.
@@ -591,10 +611,12 @@ Direct website collection, automated snapshots, and external integrations are pl
 - [x] Implement snapshot management services.
 - [x] Implement snapshot import services.
 - [x] Implement snapshot comparison services.
-- [ ] Validate performance storage and retrieval.
-- [ ] Validate comparisons using real-world data.
+- [x] Validate performance storage and retrieval.
+- [x] Validate persistence of multiple snapshots for a single course.
+- [x] Verify stored data through a dedicated Blazor page.
+- [ ] Validate comparisons across multiple real-world snapshots.
 - [ ] Schedule periodic snapshots.
-- [ ] Handle duplicates and historical data integrity.
+- [ ] Fully handle duplicates and historical data integrity.
 
 ### Phase 4 — Player Progression and Analytics
 
@@ -603,26 +625,38 @@ Direct website collection, automated snapshots, and external integrations are pl
 - [x] Create ranking movement analysis models.
 - [x] Implement evolution reporting services.
 - [x] Create console-based evolution report rendering.
-- [ ] Validate calculations using real snapshots.
-- [ ] Analyze ranking gains and losses in detail.
+- [x] Implement ranking gain and loss analysis.
+- [x] Distinguish positions gained through personal improvement from other players' movements.
+- [x] Create a ranking progression chart.
+- [x] Create a time progression chart.
+- [x] Support progression analysis over a selected date range.
+- [ ] Validate calculations across multiple real-world snapshots.
 - [ ] Compare multiple players.
-- [ ] Develop individual and community statistics.
-- [ ] Create progression charts across different periods.
+- [ ] Develop advanced individual and community statistics.
 
 ### Phase 5 — Web Interface and Visualization
 
 - [x] Create the `MKDDTracker.Web` project.
-- [x] Set up Blazor.
+- [x] Set up Blazor Interactive Server.
+- [x] Connect the web application to the existing SQLite database.
 - [x] Create the home page.
-- [x] Create the rankings page (`Ranking`).
-- [x] Create the progression page (`Evolution`).
-- [x] Create the import page (`Import`).
-- [x] Create a database verification page.
-- [ ] Validate pages using real-world data.
-- [ ] Add interactive charts.
-- [ ] Implement player profile search and browsing.
-- [ ] Improve the user experience.
-- [ ] Build advanced dashboards and statistics.
+- [x] Create the rankings page (`/classements`).
+- [x] Create the progression page (`/evolution`).
+- [x] Create the import page (`/import`).
+- [x] Create a database verification page (`/database-check`).
+- [x] Perform initial page validation using real HTML rankings.
+- [x] Add dynamic player and course selection.
+- [x] Add player search within rankings.
+- [x] Browse rankings by course and snapshot date.
+- [x] Create ranking and time progression charts.
+- [x] Build a dashboard with key statistics.
+- [x] Display the latest snapshots on the dashboard.
+- [x] Add quick navigation to the main features.
+- [ ] Create player profile search and browsing pages.
+- [ ] Improve the application's design and user experience.
+- [ ] Add advanced dashboard statistics.
+- [ ] Add advanced chart interactions (tooltips, zoom, etc.).
+- [ ] Perform comprehensive functional and robustness testing.
 
 ### Phase 6 — Automation and Integrations
 
