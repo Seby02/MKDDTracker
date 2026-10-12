@@ -1,7 +1,253 @@
 ﻿@page "/"
+@rendermode InteractiveServer
 
-<PageTitle>Home</PageTitle>
+@using Microsoft.EntityFrameworkCore
+@using MKDDTracker.Scraper.Data.Database
 
-<h1>Hello, world!</h1>
+@inject IDbContextFactory<MkddDbContext> DbFactory
 
-Welcome to your new app.
+<PageTitle>Accueil - MKDD Tracker</PageTitle>
+
+<div class="mb-4">
+    <h1>🏁 MKDD Tracker</h1>
+    <p class="text-muted">
+        Tableau de bord des classements Mario Kart: Double Dash!!
+    </p>
+</div>
+
+@if (loading)
+{
+    <p>Chargement du tableau de bord...</p>
+}
+else if (!string.IsNullOrEmpty(errorMessage))
+{
+    <div class="alert alert-danger">
+        @errorMessage
+    </div>
+}
+else
+{
+    <!-- Statistiques principales -->
+    <div class="row g-3 mb-4">
+
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Circuits</h6>
+                    <h2 class="mb-0">@courseCount</h2>
+                    <small class="text-muted">
+                        Circuits enregistrés
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Joueurs</h6>
+                    <h2 class="mb-0">@playerCount</h2>
+                    <small class="text-muted">
+                        Joueurs uniques
+                    </small>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100 shadow-sm">
+                <div class="card-body">
+                    <h6 class="text-muted">Snapshots</h6>
+                    <h2 class="mb-0">@snapshotCount</h2>
+                    <small class="text-muted">
+                        Classements sauvegardés
+                    </small>
+                </div>
+            </div>
+        </div>
+
+    </div>
+
+    <!-- Dernière date de classement -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+
+            <h5 class="card-title">
+                Dernier classement enregistré
+            </h5>
+
+            @if (latestRankingDate is null)
+            {
+                <p class="text-muted mb-0">
+                    Aucun classement enregistré.
+                </p>
+            }
+            else
+            {
+                <p class="fs-4 mb-0">
+                    @latestRankingDate.Value.ToString("dd/MM/yyyy")
+                </p>
+            }
+
+        </div>
+    </div>
+
+    <!-- Derniers snapshots -->
+    <div class="card mb-4 shadow-sm">
+        <div class="card-body">
+
+            <h5 class="card-title mb-3">
+                Derniers classements
+            </h5>
+
+            @if (latestSnapshots.Count == 0)
+            {
+                <p class="text-muted">
+                    Aucun snapshot disponible.
+                </p>
+            }
+            else
+            {
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Circuit</th>
+                                <th>Date</th>
+                                <th>Performances</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (var snapshot in latestSnapshots)
+                            {
+                                <tr>
+                                    <td>@snapshot.CourseName</td>
+                                    <td>
+                                        @snapshot.RankingDate.ToString("dd/MM/yyyy")
+                                    </td>
+                                    <td>@snapshot.PerformanceCount</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+
+            <a class="btn btn-outline-primary"
+               href="/classements">
+                Voir les classements
+            </a>
+
+        </div>
+    </div>
+
+    <!-- Accès rapide -->
+    <h4 class="mb-3">Accès rapide</h4>
+
+    <div class="row g-3">
+
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5>📥 Importer</h5>
+                    <p class="text-muted">
+                        Ajouter un nouveau classement HTML.
+                    </p>
+                    <a href="/import"
+                       class="btn btn-primary">
+                        Importer
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5>🏆 Classements</h5>
+                    <p class="text-muted">
+                        Consulter les joueurs et leurs chronos.
+                    </p>
+                    <a href="/ranking"
+                       class="btn btn-primary">
+                        Consulter
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-md-4">
+            <div class="card h-100">
+                <div class="card-body">
+                    <h5>📈 Évolution</h5>
+                    <p class="text-muted">
+                        Analyser les rangs et les chronos dans le temps.
+                    </p>
+                    <a href="/evolution"
+                       class="btn btn-primary">
+                        Analyser
+                    </a>
+                </div>
+            </div>
+        </div>
+
+    </div>
+}
+
+@code {
+    private bool loading = true;
+    private string? errorMessage;
+
+    private int courseCount;
+    private int playerCount;
+    private int snapshotCount;
+
+    private DateOnly? latestRankingDate;
+
+    private List<SnapshotSummary> latestSnapshots = [];
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using var db =
+                await DbFactory.CreateDbContextAsync();
+
+            courseCount = await db.Courses.CountAsync();
+
+            playerCount = await db.Players.CountAsync();
+
+            snapshotCount = await db.Snapshots.CountAsync();
+
+            latestSnapshots = await db.Snapshots
+                .AsNoTracking()
+                .OrderByDescending(x => x.RankingDate)
+                .ThenByDescending(x => x.Id)
+                .Take(5)
+                .Select(x => new SnapshotSummary(
+                    x.Course.Name,
+                    x.RankingDate,
+                    x.Performances.Count))
+                .ToListAsync();
+
+            if (latestSnapshots.Count > 0)
+            {
+                latestRankingDate =
+                    latestSnapshots[0].RankingDate;
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private sealed record SnapshotSummary(
+        string CourseName,
+        DateOnly RankingDate,
+        int PerformanceCount);
+}
