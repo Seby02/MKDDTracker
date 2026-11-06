@@ -1,0 +1,291 @@
+﻿@using System.Globalization
+@using MKDDTracker.Scraper.Models.Evolution
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h4>Évolution des chronos</h4>
+
+        @if (Points.Count < 2)
+        {
+            <p class="text-muted">
+                Pas assez de chronos pour afficher le graphique.
+            </p>
+        }
+        else
+        {
+            <div class="mb-3">
+                <strong>Premier chrono :</strong>
+                @FormatTime(Points[0].Time)
+
+                <span class="mx-2">→</span>
+
+                <strong>Dernier chrono :</strong>
+                @FormatTime(Points[^1].Time)
+            </div>
+
+            <div style="width:100%; overflow-x:auto;">
+                <div style="position:relative;
+                                width:100%;
+                                min-width:500px;
+                                aspect-ratio:800/350;">
+
+                    <svg viewBox="0 0 800 350"
+                         preserveAspectRatio="none"
+                         style="position:absolute;
+                                    inset:0;
+                                    width:100%;
+                                    height:100%;"
+                         role="img"
+                         aria-label="Graphique d'évolution des chronos">
+
+                        @foreach (var tick in TimeTicks)
+                        {
+                            <line x1="65"
+                                  y1="@GetY(tick)"
+                                  x2="765"
+                                  y2="@GetY(tick)"
+                                  stroke="#e5e7eb"
+                                  stroke-dasharray="4 4" />
+                        }
+
+                        <polyline points="@PolylinePoints"
+                                  fill="none"
+                                  stroke="#16a34a"
+                                  stroke-width="3"
+                                  stroke-linejoin="round"
+                                  stroke-linecap="round" />
+
+                        @foreach (var point in Points)
+                        {
+                            <circle cx="@GetX(point.Index)"
+                                    cy="@GetY(point.Time.TotalMilliseconds)"
+                                    r="6"
+                                    fill="#16a34a"
+                                    stroke="white"
+                                    stroke-width="2" />
+                        }
+                    </svg>
+
+                    @foreach (var tick in TimeTicks)
+                    {
+                        var labelStyle = LabelStyle(
+                        50,
+                        GetY(tick),
+                        "translate(-100%, -50%)");
+
+                        <span style="@labelStyle"
+                              class="mkdd-time-axis-label">
+                            @FormatMilliseconds(tick)
+                        </span>
+                    }
+
+                    @foreach (var point in Points)
+                    {
+                        var rankStyle = LabelStyle(
+                        GetX(point.Index),
+                        GetY(point.Time.TotalMilliseconds) - 18,
+                        "translate(-50%, -100%)");
+
+                        var dateStyle = LabelStyle(
+                        GetX(point.Index),
+                        325,
+                        "translate(-50%, -50%)");
+
+                        <span style="@rankStyle"
+                              class="mkdd-time-point-label">
+                            @FormatTime(point.Time)
+                        </span>
+
+                        <span style="@dateStyle"
+                              class="mkdd-time-axis-label">
+                            @point.Date.ToString("dd/MM")
+                        </span>
+                    }
+                </div>
+            </div>
+
+            <p class="text-muted mt-2 mb-0">
+                Plus le chrono est rapide, plus le point est haut.
+            </p>
+
+            <p class="mt-2">
+                <strong>Bilan :</strong> @ImprovementLabel
+            </p>
+        }
+    </div>
+</div>
+
+<style>
+    .mkdd-time-axis-label {
+        position: absolute;
+        color: #6b7280;
+        font-size: 12px;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+
+    .mkdd-time-point-label {
+        position: absolute;
+        color: #166534;
+        font-size: 12px;
+        font-weight: bold;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<MkddPlayerEvolutionStep> Steps { get; set; } = [];
+
+    private const double Left = 65;
+    private const double Right = 765;
+    private const double Top = 45;
+    private const double Bottom = 280;
+
+    private List<TimePoint> Points
+    {
+        get
+        {
+            if (Steps.Count == 0)
+                return [];
+
+            var orderedSteps = Steps
+                .OrderBy(x => x.PreviousDate)
+                .ToList();
+
+            var result = new List<TimePoint>();
+
+            if (orderedSteps[0].PreviousTime is TimeSpan firstTime)
+            {
+                result.Add(new TimePoint(
+                    0,
+                    orderedSteps[0].PreviousDate,
+                    firstTime));
+            }
+
+            foreach (var step in orderedSteps)
+            {
+                if (step.CurrentTime is TimeSpan currentTime)
+                {
+                    result.Add(new TimePoint(
+                        result.Count,
+                        step.CurrentDate,
+                        currentTime));
+                }
+            }
+
+            return result;
+        }
+    }
+
+    private double MinTime =>
+        Points.Count == 0
+            ? 0
+            : Points.Min(x => x.Time.TotalMilliseconds);
+
+    private double MaxTime =>
+        Points.Count == 0
+            ? 0
+            : Points.Max(x => x.Time.TotalMilliseconds);
+
+    private List<double> TimeTicks
+    {
+        get
+        {
+            if (Points.Count == 0)
+                return [];
+
+            if (MinTime == MaxTime)
+                return [MinTime];
+
+            var ticks = new List<double>();
+
+            for (var i = 0; i <= 4; i++)
+            {
+                ticks.Add(MinTime +
+                    (MaxTime - MinTime) * i / 4.0);
+            }
+
+            return ticks;
+        }
+    }
+
+    private double GetX(int index)
+    {
+        if (Points.Count <= 1)
+            return Left;
+
+        return Left +
+            index * (Right - Left) / (Points.Count - 1);
+    }
+
+    private double GetY(double milliseconds)
+    {
+        if (MinTime == MaxTime)
+            return (Top + Bottom) / 2;
+
+        return Top +
+            (milliseconds - MinTime) *
+            (Bottom - Top) /
+            (MaxTime - MinTime);
+    }
+
+    private string PolylinePoints =>
+        string.Join(" ",
+            Points.Select(p =>
+                $"{GetX(p.Index).ToString(CultureInfo.InvariantCulture)}," +
+                $"{GetY(p.Time.TotalMilliseconds).ToString(CultureInfo.InvariantCulture)}"));
+
+    private static string FormatTime(TimeSpan time)
+    {
+        return $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+    }
+
+    private static string FormatMilliseconds(double value)
+    {
+        var time = TimeSpan.FromMilliseconds(
+            Math.Round(value));
+
+        return FormatTime(time);
+    }
+
+    private string ImprovementLabel
+    {
+        get
+        {
+            if (Points.Count < 2)
+                return "Pas assez de données.";
+
+            var delta = Points[0].Time - Points[^1].Time;
+            var milliseconds = Math.Round(Math.Abs(delta.TotalMilliseconds));
+
+            if (delta > TimeSpan.Zero)
+                return $"Amélioration de {milliseconds:0} ms";
+
+            if (delta < TimeSpan.Zero)
+                return $"Chrono plus lent de {milliseconds:0} ms";
+
+            return "Chrono inchangé.";
+        }
+    }
+
+    private static string LabelStyle(
+        double x,
+        double y,
+        string transform)
+    {
+        var left = (x / 800 * 100)
+            .ToString(CultureInfo.InvariantCulture);
+
+        var top = (y / 350 * 100)
+            .ToString(CultureInfo.InvariantCulture);
+
+        return $"position:absolute; left:{left}%; top:{top}%; transform:{transform};";
+    }
+
+    private sealed record TimePoint(
+        int Index,
+        DateOnly Date,
+        TimeSpan Time);
+}

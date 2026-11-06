@@ -1,0 +1,221 @@
+﻿@using System.Globalization
+@using MKDDTracker.Scraper.Models.Evolution
+
+<div class="card mb-4">
+    <div class="card-body">
+
+        <h4>Évolution du classement</h4>
+
+        @if (Points.Count < 2)
+        {
+            <p class="text-muted">
+                Pas assez de données pour afficher le graphique.
+            </p>
+        }
+        else
+        {
+            <div style="width:100%; overflow-x:auto;">
+
+                <div style="position:relative; width:100%; min-width:500px; aspect-ratio:800/350;">
+
+                    <!-- SVG : uniquement les lignes et les points -->
+                    <svg viewBox="0 0 800 350"
+                         preserveAspectRatio="none"
+                         style="position:absolute; inset:0; width:100%; height:100%;"
+                         role="img"
+                         aria-label="Graphique d'évolution du classement">
+
+                        @foreach (var tick in RankTicks)
+                        {
+                            <line x1="65"
+                                  y1="@GetY(tick)"
+                                  x2="765"
+                                  y2="@GetY(tick)"
+                                  stroke="#e5e7eb"
+                                  stroke-dasharray="4 4" />
+                        }
+
+                        <polyline points="@PolylinePoints"
+                                  fill="none"
+                                  stroke="#2563eb"
+                                  stroke-width="3"
+                                  stroke-linejoin="round"
+                                  stroke-linecap="round" />
+
+                        @foreach (var point in Points)
+                        {
+                            <circle cx="@GetX(point.Index)"
+                                    cy="@GetY(point.Rank)"
+                                    r="6"
+                                    fill="#2563eb"
+                                    stroke="white"
+                                    stroke-width="2" />
+                        }
+                    </svg>
+
+                    <!-- Graduations verticales en HTML -->
+                    @foreach (var tick in RankTicks)
+                    {
+                        <span @key="tick"
+                              style="@LabelStyle(50, GetY(tick), "translate(-100%, -50%)")"
+                              class="chart-axis-label">
+                            @($"#{tick}")
+                        </span>
+                    }
+
+                    <!-- Rangs et dates en HTML -->
+                    @foreach (var point in Points)
+                    {
+
+                        <span @key="point.Index"
+                              style="@LabelStyle(GetX(point.Index), GetY(point.Rank) - 18, "translate(-50%, -100%)")"
+                              class="chart-rank-label">
+                            @($"#{point.Rank}")
+                        </span>
+
+
+
+                        <span @key="point.Index"
+                              style="@LabelStyle(GetX(point.Index), 325, "translate(-50%, -50%)")"
+                              class="chart-axis-label">
+                            @point.Date.ToString("dd/MM")
+                        </span>
+
+                    }
+
+                </div>
+            </div>
+
+            <p class="text-muted mt-2 mb-0">
+                Un rang plus proche de 1 apparaît plus haut.
+            </p>
+        }
+    </div>
+</div>
+
+<style>
+    .chart-axis-label {
+        position: absolute;
+        color: #6b7280;
+        font-size: 13px;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+
+    .chart-rank-label {
+        position: absolute;
+        color: #1f2937;
+        font-size: 13px;
+        font-weight: bold;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<MkddPlayerEvolutionStep> Steps { get; set; } = [];
+
+    private const double Left = 65;
+    private const double Right = 765;
+    private const double Top = 40;
+    private const double Bottom = 285;
+
+    private List<RankPoint> Points
+    {
+        get
+        {
+            if (Steps.Count == 0)
+                return [];
+
+            var orderedSteps = Steps
+                .OrderBy(x => x.PreviousDate)
+                .ToList();
+
+            var result = new List<RankPoint>
+            {
+                new(
+                    0,
+                    orderedSteps[0].PreviousDate,
+                    orderedSteps[0].PreviousRank)
+            };
+
+            for (var i = 0; i < orderedSteps.Count; i++)
+            {
+                result.Add(new RankPoint(
+                    i + 1,
+                    orderedSteps[i].CurrentDate,
+                    orderedSteps[i].CurrentRank));
+            }
+
+            return result;
+        }
+    }
+
+    private int MinRank =>
+        Points.Count == 0 ? 1 : Points.Min(x => x.Rank);
+
+    private int MaxRank =>
+        Points.Count == 0 ? 1 : Points.Max(x => x.Rank);
+
+    private List<int> RankTicks
+    {
+        get
+        {
+            if (Points.Count == 0)
+                return [];
+
+            var range = Math.Max(1, MaxRank - MinRank);
+            var step = Math.Max(1, (int)Math.Ceiling(range / 5.0));
+
+            var ticks = new List<int>();
+
+            for (var rank = MinRank; rank <= MaxRank; rank += step)
+                ticks.Add(rank);
+
+            if (!ticks.Contains(MaxRank))
+                ticks.Add(MaxRank);
+
+            return ticks;
+        }
+    }
+
+    private double GetX(int index)
+    {
+        if (Points.Count <= 1)
+            return Left;
+
+        return Left +
+            index * (Right - Left) / (Points.Count - 1);
+    }
+
+    private double GetY(int rank)
+    {
+        if (MinRank == MaxRank)
+            return (Top + Bottom) / 2;
+
+        return Top +
+            (rank - MinRank) *
+            (Bottom - Top) /
+            (double)(MaxRank - MinRank);
+    }
+
+    private string PolylinePoints =>
+        string.Join(" ",
+            Points.Select(p =>
+                $"{GetX(p.Index).ToString(CultureInfo.InvariantCulture)}," +
+                $"{GetY(p.Rank).ToString(CultureInfo.InvariantCulture)}"));
+
+    private static string LabelStyle(double x, double y, string transform)
+    {
+        var left = (x / 800 * 100).ToString(CultureInfo.InvariantCulture);
+        var top = (y / 350 * 100).ToString(CultureInfo.InvariantCulture);
+
+        return $"position:absolute; left:{left}%; top:{top}%; transform:{transform};";
+    }
+
+    private sealed record RankPoint(
+        int Index,
+        DateOnly Date,
+        int Rank);
+}

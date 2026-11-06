@@ -1,0 +1,226 @@
+﻿@page "/ranking"
+@rendermode InteractiveServer
+
+@using Microsoft.EntityFrameworkCore
+@using MKDDTracker.Scraper.Data.Database
+
+@inject IDbContextFactory<MkddDbContext> DbFactory
+
+<PageTitle>Classements - MKDD Tracker</PageTitle>
+
+<h1>Classements</h1>
+
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3">
+
+            <div class="col-md-6">
+                <label class="form-label">Circuit</label>
+                <select class="form-select"
+                        value="@selectedCourseId"
+                        @onchange="OnCourseChanged">
+                    @foreach (var course in courses)
+                    {
+                        <option value="@course.Id">
+                            @course.Name
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Date du snapshot</label>
+                <select class="form-select"
+                        @bind="selectedSnapshotId"
+                        @bind:after="LoadPerformancesAsync">
+                    @foreach (var snapshot in snapshots)
+                    {
+                        <option value="@snapshot.Id">
+                            @snapshot.RankingDate.ToString("dd/MM/yyyy")
+                        </option>
+                    }
+                </select>
+            </div>
+
+            <div class="col-12">
+                <label class="form-label">Rechercher un joueur</label>
+                <input class="form-control"
+                       @bind="searchText"
+                       @bind:event="oninput"
+                       placeholder="Nom du joueur..." />
+            </div>
+
+        </div>
+    </div>
+</div>
+
+@if (!string.IsNullOrWhiteSpace(errorMessage))
+{
+    <div class="alert alert-danger">@errorMessage</div>
+}
+else if (loading)
+{
+    <p>Chargement du classement...</p>
+}
+else
+{
+    <p>
+        <strong>@FilteredPerformances.Count()</strong>
+        performance(s) affichée(s)
+    </p>
+
+    <table class="table table-striped table-hover">
+        <thead>
+            <tr>
+                <th>Rang</th>
+                <th>Joueur</th>
+                <th>Chrono</th>
+                <th>Pays</th>
+            </tr>
+        </thead>
+        <tbody>
+            @foreach (var performance in FilteredPerformances)
+            {
+                <tr>
+                    <td>#@performance.Rank</td>
+                    <td>@performance.PlayerName</td>
+                    <td>@FormatRaceTime(performance.Time)</td>
+                    <td>@(performance.Country ?? "—")</td>
+                </tr>
+            }
+        </tbody>
+    </table>
+}
+
+@code {
+    private List<CourseOption> courses = [];
+    private List<SnapshotOption> snapshots = [];
+    private List<PerformanceRow> performances = [];
+
+    private int selectedCourseId;
+    private int selectedSnapshotId;
+
+    private string searchText = "";
+    private string? errorMessage;
+    private bool loading = true;
+
+    private IEnumerable<PerformanceRow> FilteredPerformances =>
+        performances.Where(x =>
+            string.IsNullOrWhiteSpace(searchText) ||
+            x.PlayerName.Contains(
+                searchText,
+                StringComparison.OrdinalIgnoreCase));
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            courses = await db.Courses
+                .AsNoTracking()
+                .OrderBy(x => x.Name)
+                .Select(x => new CourseOption(x.Id, x.Name))
+                .ToListAsync();
+
+            if (courses.Count > 0)
+            {
+                selectedCourseId = courses[0].Id;
+                await LoadSnapshotsAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+        finally
+        {
+            loading = false;
+        }
+    }
+
+    private async Task OnCourseChanged(ChangeEventArgs e)
+    {
+        if (int.TryParse(e.Value?.ToString(), out var id))
+        {
+            selectedCourseId = id;
+            await LoadSnapshotsAsync();
+        }
+    }
+
+    private async Task LoadSnapshotsAsync()
+    {
+        errorMessage = null;
+        snapshots = [];
+        performances = [];
+        selectedSnapshotId = 0;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            snapshots = await db.Snapshots
+                .AsNoTracking()
+                .Where(x => x.CourseId == selectedCourseId)
+                .OrderByDescending(x => x.RankingDate)
+                .Select(x => new SnapshotOption(
+                    x.Id,
+                    x.RankingDate))
+                .ToListAsync();
+
+            if (snapshots.Count > 0)
+            {
+                selectedSnapshotId = snapshots[0].Id;
+                await LoadPerformancesAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task LoadPerformancesAsync()
+    {
+        errorMessage = null;
+        performances = [];
+
+        if (selectedSnapshotId == 0)
+            return;
+
+        try
+        {
+            await using var db = await DbFactory.CreateDbContextAsync();
+
+            performances = await db.Performances
+                .AsNoTracking()
+                .Where(x => x.SnapshotId == selectedSnapshotId)
+                .OrderBy(x => x.Rank)
+                .Select(x => new PerformanceRow(
+                    x.Rank,
+                    x.Player.Name,
+                    x.Time,
+                    x.Player.Country))
+                .ToListAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private static string FormatRaceTime(TimeSpan time)
+    {
+        return $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+    }
+
+    private sealed record CourseOption(int Id, string Name);
+
+    private sealed record SnapshotOption(int Id, DateOnly RankingDate);
+
+    private sealed record PerformanceRow(
+        int Rank,
+        string PlayerName,
+        TimeSpan Time,
+        string? Country);
+}
