@@ -143,6 +143,163 @@ else if (selectedPlayer is not null)
     }
 }
 
+
+@if (courseStats.Count > 0)
+{
+    <div class="card mt-4 mb-4 shadow-sm">
+        <div class="card-body">
+
+            <h3 class="mb-3">Historique des performances</h3>
+
+            <div class="row g-3 mb-4">
+                <div class="col-md-6">
+                    <label class="form-label">Circuit</label>
+
+                    <select class="form-select"
+                            @bind="selectedHistoryCourseId">
+                        @foreach (var course in courseStats)
+                        {
+                            <option value="@course.CourseId">
+                                @course.CourseName
+                            </option>
+                        }
+                    </select>
+                </div>
+
+                <div class="col-md-6 d-flex align-items-end">
+                    @{
+                        var currentCourse = courseStats
+                        .FirstOrDefault(x =>
+                        x.CourseId == selectedHistoryCourseId);
+                    }
+
+                    @if (currentCourse is not null)
+                    {
+                        <a class="btn btn-primary"
+                           href="@GetEvolutionUrl(currentCourse.CourseName)">
+                            Voir l'évolution
+                        </a>
+                    }
+                </div>
+            </div>
+
+            @{
+                var history = FilteredHistory;
+            }
+
+            @if (history.Count == 0)
+            {
+                <p class="text-muted">
+                    Aucun historique disponible pour ce circuit.
+                </p>
+            }
+            else
+            {
+                <p class="text-muted">
+                    @history.Count snapshot(s) enregistré(s)
+                </p>
+
+                <div class="table-responsive">
+                    <table class="table table-striped table-hover">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Rang</th>
+                                <th>Évolution du rang</th>
+                                <th>Chrono</th>
+                                <th>Évolution du chrono</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @for (var i = 0; i < history.Count; i++)
+                            {
+                                var current = history[i];
+
+                                PlayerPerformance? previous =
+                                i > 0 ? history[i - 1] : null;
+
+                                <tr>
+                                    <td>
+                                        @current.Date.ToString("dd/MM/yyyy")
+                                    </td>
+
+                                    <td>
+                                        <strong>@($"#{current.Rank}")</strong>
+                                    </td>
+
+                                    <td>
+                                        @if (previous is null)
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                        else
+                                        {
+                                            var placesGained =
+                                            previous.Rank - current.Rank;
+
+                                            if (placesGained > 0)
+                                            {
+                                                <span class="text-success">
+                                                    ▲ +@placesGained
+                                                </span>
+                                            }
+                                            else if (placesGained < 0)
+                                            {
+                                                <span class="text-danger">
+                                                    ▼ @placesGained
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">=</span>
+                                            }
+                                        }
+                                    </td>
+
+                                    <td>@FormatTime(current.Time)</td>
+
+                                    <td>
+                                        @if (previous is null)
+                                        {
+                                            <span class="text-muted">—</span>
+                                        }
+                                        else
+                                        {
+                                            var millisecondsGained =
+                                            (previous.Time - current.Time)
+                                            .TotalMilliseconds;
+
+                                            if (millisecondsGained > 0)
+                                            {
+                                                <span class="text-success">
+                                                    ▲ @millisecondsGained.ToString("0") ms gagnées
+                                                </span>
+                                            }
+                                            else if (millisecondsGained < 0)
+                                            {
+                                                <span class="text-danger">
+                                                    ▼ @Math.Abs(millisecondsGained).ToString("0") ms perdues
+                                                </span>
+                                            }
+                                            else
+                                            {
+                                                <span class="text-muted">
+                                                    Chrono inchangé
+                                                </span>
+                                            }
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </table>
+                </div>
+            }
+        </div>
+    </div>
+}
+
+
 @code {
     private List<PlayerOption> players = [];
     private List<CourseStats> courseStats = [];
@@ -156,12 +313,34 @@ else if (selectedPlayer is not null)
     private string? errorMessage;
     private bool loading = true;
 
+    private List<PlayerPerformance> playerHistory = [];
+
+    private int selectedHistoryCourseId;
+
+    private List<PlayerPerformance> FilteredHistory =>
+        playerHistory
+            .Where(x => x.CourseId == selectedHistoryCourseId)
+            .OrderBy(x => x.Date)
+            .ThenBy(x => x.SnapshotId)
+            .ToList();
+
     private IEnumerable<PlayerOption> FilteredPlayers =>
         players.Where(x =>
             string.IsNullOrWhiteSpace(searchText) ||
             x.Name.Contains(
                 searchText,
                 StringComparison.OrdinalIgnoreCase));
+
+    private string GetEvolutionUrl(string courseName)
+    {
+        if (selectedPlayer is null)
+            return "/evolution";
+
+        var player = Uri.EscapeDataString(selectedPlayer.Name);
+        var course = Uri.EscapeDataString(courseName);
+
+        return $"/evolution?player={player}&course={course}";
+    }
 
     protected override async Task OnInitializedAsync()
     {
@@ -205,6 +384,8 @@ else if (selectedPlayer is not null)
 
         selectedPlayer = null;
         courseStats = [];
+        playerHistory = [];
+        selectedHistoryCourseId = 0;
         performanceCount = 0;
 
         try
@@ -243,10 +424,10 @@ else if (selectedPlayer is not null)
 
             courseStats = performances
                 .GroupBy(x => new
-                {
-                    x.CourseId,
-                    x.CourseName
-                })
+                    {
+                        x.CourseId,
+                        x.CourseName
+                    })
                 .Select(group =>
                 {
                     var latest = group
@@ -255,6 +436,7 @@ else if (selectedPlayer is not null)
                         .First();
 
                     return new CourseStats(
+                        group.Key.CourseId,
                         group.Key.CourseName,
                         group.Min(x => x.Rank),
                         group.Min(x => x.Time),
@@ -264,6 +446,8 @@ else if (selectedPlayer is not null)
                 })
                 .OrderBy(x => x.CourseName)
                 .ToList();
+
+            selectedHistoryCourseId = courseStats.FirstOrDefault()?.CourseId ?? 0;
         }
         catch (Exception ex)
         {
@@ -294,6 +478,7 @@ else if (selectedPlayer is not null)
         TimeSpan Time);
 
     private sealed record CourseStats(
+        int CourseId,
         string CourseName,
         int BestRank,
         TimeSpan BestTime,

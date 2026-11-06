@@ -232,6 +232,12 @@ else
     private bool loading;
     private string? errorMessage;
 
+    [SupplyParameterFromQuery(Name = "player")]
+    private string? PlayerFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "course")]
+    private string? CourseFromQuery { get; set; }
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -250,13 +256,33 @@ else
                 .Select(x => x.Name)
                 .ToListAsync();
 
-            selectedPlayer = players.Contains("Mattilde F")
-                ? "Mattilde F"
-                : players.FirstOrDefault() ?? "";
 
-            selectedCourse = courses.Contains("Luigi Circuit")
-                ? "Luigi Circuit"
-                : courses.FirstOrDefault() ?? "";
+            // Sélection du joueur transmis depuis sa fiche
+            if (!string.IsNullOrWhiteSpace(PlayerFromQuery) &&
+                players.Contains(PlayerFromQuery))
+            {
+                selectedPlayer = PlayerFromQuery;
+            }
+            else
+            {
+                selectedPlayer = players.Contains("Mattilde F")
+                    ? "Mattilde F"
+                    : players.FirstOrDefault() ?? "";
+            }
+
+            // Sélection du circuit transmis depuis sa fiche
+            if (!string.IsNullOrWhiteSpace(CourseFromQuery) &&
+                courses.Contains(CourseFromQuery))
+            {
+                selectedCourse = CourseFromQuery;
+            }
+            else
+            {
+                selectedCourse = courses.Contains("Luigi Circuit")
+                    ? "Luigi Circuit"
+                    : courses.FirstOrDefault() ?? "";
+            }
+
 
             if (players.Count > 0 && courses.Count > 0)
             {
