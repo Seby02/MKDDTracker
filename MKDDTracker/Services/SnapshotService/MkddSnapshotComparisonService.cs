@@ -2,6 +2,7 @@
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Data.Entities;
 using MKDDTracker.Scraper.Models.Evolution;
+using MKDDTracker.Scraper.Services.Ranking;
 
 namespace MKDDTracker.Scraper.Services.SnapshotService;
 
@@ -71,10 +72,11 @@ public sealed class MkddSnapshotComparisonService
         // -------------------------------------------------
 
         var counterfactualRank =
-    CalculateRank(
-        previousSnapshot.Performances,
-        player.Id,
-        currentPerformance.Time);
+            MkddRankingCalculator.CalculateRank(
+                previousSnapshot.Performances
+                    .Where(x => x.PlayerId != player.Id)
+                    .Select(x => x.Time),
+                currentPerformance.Time);
 
         // -------------------------------------------------
         // 2. Progression totale
@@ -315,17 +317,4 @@ public sealed class MkddSnapshotComparisonService
             .ToList();
     }
 
-    private static int CalculateRank(
-    IEnumerable<MkddPerformanceEntity> performances,
-    int targetPlayerId,
-    TimeSpan targetTime)
-    {
-        return performances
-            .Where(x => x.PlayerId != targetPlayerId)
-            .Count(x =>
-                x.Time < targetTime ||
-                (x.Time == targetTime &&
-                 x.PlayerId < targetPlayerId))
-            + 1;
-    }
 }

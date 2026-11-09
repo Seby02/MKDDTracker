@@ -3,6 +3,7 @@ using MKDDTracker.Scraper.Data;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Data.Entities;
 using MKDDTracker.Scraper.Models;
+using MKDDTracker.Scraper.Services.Ranking;
 
 namespace MKDDTracker.Scraper.Services;
 
@@ -190,22 +191,20 @@ public sealed class MkddTestDataSeeder
             // CALCUL DU CLASSEMENT
             // -------------------------------------------------
 
-            var orderedPerformances =
-                temporaryPerformances
-                    .OrderBy(x => x.Time)
-                    .ThenBy(x => x.PlayerId)
-                    .ToList();
+            var rankedPerformances =
+                MkddRankingCalculator.CalculateRanks(
+                    temporaryPerformances,
+                    x => x.Time);
 
-            for (var i = 0; i < orderedPerformances.Count; i++)
+            foreach (var rankedPerformance in rankedPerformances)
             {
-                var performance =
-                    orderedPerformances[i];
+                var performance = rankedPerformance.Item;
 
                 snapshot.Performances.Add(
                     new MkddPerformanceEntity
                     {
                         PlayerId = performance.PlayerId,
-                        Rank = i + 1,
+                        Rank = rankedPerformance.Rank,
                         Time = performance.Time,
                         RecordDate = performance.RecordDate
                     });
