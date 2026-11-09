@@ -1,20 +1,13 @@
 <Project Sdk="Microsoft.NET.Sdk.Web">
 
-	<ItemGroup>
-		<ProjectReference Include="..\MKDDTracker.csproj" />
-	</ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\MKDDTracker.csproj" />
+  </ItemGroup>
 
-	<ItemGroup>
-		<None Update="Data\mkddtracker.db">
-			<CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
-			<CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
-		</None>
-	</ItemGroup>
-
-	<PropertyGroup>
-		<TargetFramework>net9.0</TargetFramework>
-		<Nullable>enable</Nullable>
-		<ImplicitUsings>enable</ImplicitUsings>
-	</PropertyGroup>
+  <PropertyGroup>
+    <TargetFramework>net9.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
 
 </Project>

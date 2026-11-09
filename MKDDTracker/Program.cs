@@ -1,205 +1,101 @@
-﻿using Microsoft.EntityFrameworkCore;
-using MKDDTracker.Scraper.Data;
+using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
-using MKDDTracker.Scraper.Models.Evolution;
 using MKDDTracker.Scraper.Parsing;
 using MKDDTracker.Scraper.Services;
 using MKDDTracker.Scraper.Services.EvolutionService;
 using MKDDTracker.Scraper.Services.SnapshotService;
 
-const string filePath = "Samples/luigi-circuit.html";
+const string seedDemoArgument = "--seed-demo";
+const string resetDemoArgument = "--reset-demo";
 const string courseName = "Luigi Circuit";
-
 const string playerName = "Mattilde F";
+const string opponentName = "Enzo Vusur";
 
-var evolutionStartDate = new DateOnly(2026, 9, 1);
-var evolutionEndDate = new DateOnly(2026, 9, 22);
-
-var previousDate = new DateOnly(2026, 9, 15);
-var currentDate = new DateOnly(2026, 9, 22);
-
-
-// ========================================
-// VERIFICATION DU FICHIER
-// ========================================
-
-if (!File.Exists(filePath))
+if (!args.Contains(seedDemoArgument, StringComparer.OrdinalIgnoreCase))
 {
-    Console.WriteLine(
-        $"Fichier introuvable : {filePath}");
-
+    Console.WriteLine("MKDDTracker n'ajoute aucune donnée de démonstration au démarrage normal.");
+    Console.WriteLine();
+    Console.WriteLine("Pour créer ou actualiser la base de démonstration séparée :");
+    Console.WriteLine("  dotnet run --project MKDDTracker -- --seed-demo");
+    Console.WriteLine();
+    Console.WriteLine("Pour la recréer entièrement :");
+    Console.WriteLine("  dotnet run --project MKDDTracker -- --seed-demo --reset-demo");
     return;
 }
 
+var samplePath = Path.Combine(
+    AppContext.BaseDirectory,
+    "Samples",
+    "luigi-circuit.html");
 
-// ========================================
-// PARSING DU CLASSEMENT ORIGINAL
-// ========================================
-
-var html = await File.ReadAllTextAsync(filePath);
-
-var parser = new MkddCoursePageParser();
-
-var performances = parser.Parse(html);
-
-
-// ========================================
-// TOP 10 ORIGINAL
-// ========================================
-
-var originalTop10 = performances
-    .OrderBy(x => x.Rank)
-    .Take(10);
-
-Console.WriteLine();
-Console.WriteLine("TOP 10 ORIGINAL");
-Console.WriteLine("----------------");
-
-foreach (var performance in originalTop10)
+if (!File.Exists(samplePath))
 {
-    Console.WriteLine(
-        $"#{performance.Rank} - " +
-        $"{performance.PlayerName} - " +
-        $"{FormatRaceTime(performance.Time)}");
+    Console.Error.WriteLine($"Fichier de démonstration introuvable : {samplePath}");
+    Environment.ExitCode = 1;
+    return;
 }
 
-Console.WriteLine();
+MkddDatabasePaths.EnsureApplicationDataDirectoryExists();
+var demoDatabasePath = MkddDatabasePaths.DemoDatabasePath;
 
-Console.WriteLine(
-    $"Performances trouvées : {performances.Count}");
-
-
-// ========================================
-// DATABASE
-// ========================================
+if (args.Contains(resetDemoArgument, StringComparer.OrdinalIgnoreCase))
+{
+    DeleteSqliteDatabase(demoDatabasePath);
+}
 
 var options = new DbContextOptionsBuilder<MkddDbContext>()
-    .UseSqlite("Data Source=mkddtracker.db")
+    .UseSqlite($"Data Source={demoDatabasePath}")
     .Options;
 
-using var db = new MkddDbContext(options);
-
+await using var db = new MkddDbContext(options);
 await db.Database.EnsureCreatedAsync();
 
+var html = await File.ReadAllTextAsync(samplePath);
+var performances = new MkddCoursePageParser().Parse(html);
 
-// ========================================
-// SNAPSHOT REEL
-// ========================================
-
-var snapshotService =
-    new MkddSnapshotService(db);
-
-var rankingDate =
-    DateOnly.FromDateTime(DateTime.UtcNow);
-
-var capturedAt =
-    DateTime.UtcNow;
-
-await snapshotService.SaveSnapshotAsync(
-    courseName,
-    performances,
-    rankingDate,
-    capturedAt);
-
-Console.WriteLine(
-    "Snapshot enregistré.");
-
-
-// ========================================
-// VERIFICATION ENZO
-// ========================================
-
-var enzo =
-    await db.Players
-        .SingleOrDefaultAsync(
-            x => x.Name == "Enzo Vusur");
-
-Console.WriteLine(
-    enzo is null
-        ? "Enzo introuvable"
-        : $"Enzo trouvé : ID {enzo.Id}");
-
-
-// ========================================
-// DONNEES DE TEST
-// ========================================
-
-var testSeeder =
-    new MkddTestDataSeeder(db);
-
-await testSeeder.SeedAsync(
+var demoSeeder = new MkddDemoDataSeeder(db);
+await demoSeeder.SeedAsync(
     courseName,
     playerName,
-    "Enzo Vusur",
+    opponentName,
     performances);
 
-Console.WriteLine(
-    "Données de test créées.");
+Console.WriteLine($"Base de démonstration prête : {demoDatabasePath}");
+Console.WriteLine("La base réelle mkddtracker.db n'a pas été modifiée.");
 
-// ========================================
-// SERVICE DE COMPARAISON
-// ========================================
+var comparisonService = new MkddSnapshotComparisonService(db);
+var playerEvolutionService = new MkddPlayerEvolutionService(
+    db,
+    comparisonService);
 
-var comparisonService =
-    new MkddSnapshotComparisonService(db);
+var evolution = await playerEvolutionService.AnalyzeAsync(
+    playerName,
+    courseName,
+    new DateOnly(2026, 9, 1),
+    new DateOnly(2026, 9, 22));
 
-
-// ========================================
-// EVOLUTION COMPLETE SUR LA PERIODE
-// ========================================
-
-var playerEvolutionService =
-    new MkddPlayerEvolutionService(
-        db,
-        comparisonService);
-
-var completeEvolution =
-    await playerEvolutionService.AnalyzeAsync(
-        playerName,
-        courseName,
-        evolutionStartDate,
-        evolutionEndDate);
-
-if (completeEvolution is null)
+if (evolution is null)
 {
-    Console.WriteLine();
-
-    Console.WriteLine(
-        "Impossible d'analyser l'evolution.");
-
+    Console.Error.WriteLine("Impossible d'analyser le scénario de démonstration.");
+    Environment.ExitCode = 1;
     return;
 }
 
+var report = new MkddEvolutionReportService().BuildReport(evolution);
+new MkddEvolutionConsoleRenderer().Render(report);
 
-// ========================================
-// CONSTRUCTION DU RAPPORT
-// ========================================
-
-var reportService =
-    new MkddEvolutionReportService();
-
-var report =
-    reportService.BuildReport(
-        completeEvolution);
-
-
-// ========================================
-// AFFICHAGE DU RAPPORT
-// ========================================
-
-var renderer =
-    new MkddEvolutionConsoleRenderer();
-
-renderer.Render(report);
-
-// ========================================
-// FORMATAGE
-// ========================================
-
-static string FormatRaceTime(TimeSpan time)
+static void DeleteSqliteDatabase(string databasePath)
 {
-    return
-        $"{(int)time.TotalMinutes}:" +
-        $"{time.Seconds:00}." +
-        $"{time.Milliseconds:000}";
+    foreach (var path in new[]
+             {
+                 databasePath,
+                 $"{databasePath}-shm",
+                 $"{databasePath}-wal"
+             })
+    {
+        if (File.Exists(path))
+        {
+            File.Delete(path);
+        }
+    }
 }

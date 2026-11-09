@@ -1,52 +1,25 @@
-using MKDDTracker.Web.Components;
 using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
-using MKDDTracker.Scraper.Services.SnapshotService;
 using MKDDTracker.Scraper.Services.EvolutionService;
+using MKDDTracker.Scraper.Services.SnapshotService;
+using MKDDTracker.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// L'application écoute uniquement sur l'ordinateur local.
+// L'application Ã©coute uniquement sur l'ordinateur local.
 builder.WebHost.UseUrls("http://127.0.0.1:5080");
 
-// Services Blazor
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-// Emplacement de la base initiale intégrée à l'application.
-var initialDatabasePath = Path.Combine(
-    AppContext.BaseDirectory,
-    "Data",
-    "mkddtracker.db");
+// La base rÃ©elle appartient Ã  l'utilisateur. Elle est crÃ©Ã©e vide au premier
+// lancement et n'est jamais initialisÃ©e Ã  partir d'une base de dÃ©monstration.
+MkddDatabasePaths.EnsureApplicationDataDirectoryExists();
+var databasePath = MkddDatabasePaths.RealDatabasePath;
 
-// Emplacement permanent de la base de l'utilisateur Windows.
-var appDataDirectory = Path.Combine(
-    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-    "MKDDTracker");
-
-Directory.CreateDirectory(appDataDirectory);
-
-var databasePath = Path.Combine(
-    appDataDirectory,
-    "mkddtracker.db");
-
-// Création de la base utilisateur uniquement au premier lancement.
-if (!File.Exists(databasePath))
-{
-    if (!File.Exists(initialDatabasePath))
-    {
-        throw new FileNotFoundException(
-            $"Base initiale introuvable : {initialDatabasePath}");
-    }
-
-    File.Copy(initialDatabasePath, databasePath);
-}
-
-// Configuration SQLite
 builder.Services.AddDbContextFactory<MkddDbContext>(options =>
     options.UseSqlite($"Data Source={databasePath}"));
 
-// Services métier
 builder.Services.AddScoped<MkddSnapshotComparisonService>();
 builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
@@ -54,7 +27,14 @@ builder.Services.AddScoped<MkddSnapshotImportService>();
 
 var app = builder.Build();
 
-// Pipeline HTTP
+await using (var scope = app.Services.CreateAsyncScope())
+{
+    var dbFactory = scope.ServiceProvider
+        .GetRequiredService<IDbContextFactory<MkddDbContext>>();
+    await using var db = await dbFactory.CreateDbContextAsync();
+    await db.Database.EnsureCreatedAsync();
+}
+
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
@@ -62,9 +42,7 @@ if (!app.Environment.IsDevelopment())
 
 // Pas de redirection HTTPS : l'application fonctionne localement en HTTP.
 app.UseAntiforgery();
-
 app.MapStaticAssets();
-
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
