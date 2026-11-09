@@ -6,28 +6,47 @@ using MKDDTracker.Scraper.Services.EvolutionService;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
+// L'application écoute uniquement sur l'ordinateur local.
+builder.WebHost.UseUrls("http://127.0.0.1:5080");
+
+// Services Blazor
 builder.Services.AddRazorComponents()
     .AddInteractiveServerComponents();
 
-var databasePath = Path.GetFullPath(
-    Path.Combine(
-        builder.Environment.ContentRootPath,
-        "..",
-        "bin",
-        "Debug",
-        "net9.0",
-        "mkddtracker.db"));
+// Emplacement de la base initiale intégrée à l'application.
+var initialDatabasePath = Path.Combine(
+    AppContext.BaseDirectory,
+    "Data",
+    "mkddtracker.db");
 
+// Emplacement permanent de la base de l'utilisateur Windows.
+var appDataDirectory = Path.Combine(
+    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+    "MKDDTracker");
+
+Directory.CreateDirectory(appDataDirectory);
+
+var databasePath = Path.Combine(
+    appDataDirectory,
+    "mkddtracker.db");
+
+// Création de la base utilisateur uniquement au premier lancement.
 if (!File.Exists(databasePath))
 {
-    throw new FileNotFoundException(
-        $"Base MKDD introuvable : {databasePath}");
+    if (!File.Exists(initialDatabasePath))
+    {
+        throw new FileNotFoundException(
+            $"Base initiale introuvable : {initialDatabasePath}");
+    }
+
+    File.Copy(initialDatabasePath, databasePath);
 }
 
+// Configuration SQLite
 builder.Services.AddDbContextFactory<MkddDbContext>(options =>
     options.UseSqlite($"Data Source={databasePath}"));
 
+// Services métier
 builder.Services.AddScoped<MkddSnapshotComparisonService>();
 builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
@@ -35,20 +54,17 @@ builder.Services.AddScoped<MkddSnapshotImportService>();
 
 var app = builder.Build();
 
-// Configure the HTTP request pipeline.
+// Pipeline HTTP
 if (!app.Environment.IsDevelopment())
 {
     app.UseExceptionHandler("/Error", createScopeForErrors: true);
-    // The default HSTS value is 30 days. You may want to change this for production scenarios, see https://aka.ms/aspnetcore-hsts.
-    app.UseHsts();
 }
 
-app.UseHttpsRedirection();
-
-
+// Pas de redirection HTTPS : l'application fonctionne localement en HTTP.
 app.UseAntiforgery();
 
 app.MapStaticAssets();
+
 app.MapRazorComponents<App>()
     .AddInteractiveServerRenderMode();
 
