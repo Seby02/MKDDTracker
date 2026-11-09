@@ -301,6 +301,10 @@ else if (selectedPlayer is not null)
 
 
 @code {
+
+    [SupplyParameterFromQuery(Name = "player")]
+    private string? PlayerFromQuery { get; set; }
+
     private List<PlayerOption> players = [];
     private List<CourseStats> courseStats = [];
 
@@ -357,6 +361,25 @@ else if (selectedPlayer is not null)
                     x.Name,
                     x.Country))
                 .ToListAsync();
+
+            if (!string.IsNullOrWhiteSpace(PlayerFromQuery))
+            {
+                var matchingPlayer = players.FirstOrDefault(
+                    x => string.Equals(
+                        x.Name,
+                        PlayerFromQuery,
+                        StringComparison.OrdinalIgnoreCase));
+
+                if (matchingPlayer is not null)
+                {
+                    selectedPlayerId = matchingPlayer.Id;
+                    searchText = matchingPlayer.Name;
+
+                    await LoadPlayerAsync();
+                }
+            }
+
+
         }
         catch (Exception ex)
         {
