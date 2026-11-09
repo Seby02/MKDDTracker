@@ -83,7 +83,14 @@ else
             {
                 <tr>
                     <td>#@performance.Rank</td>
-                    <td>@performance.PlayerName</td>
+
+                    <td>
+                        <a href="@GetPlayerUrl(performance.PlayerName)"
+                           class="text-decoration-none fw-semibold">
+                            @performance.PlayerName
+                        </a>
+                    </td>
+
                     <td>@FormatRaceTime(performance.Time)</td>
                     <td>@(performance.Country ?? "—")</td>
                 </tr>
@@ -137,6 +144,11 @@ else
         {
             loading = false;
         }
+    }
+
+    private static string GetPlayerUrl(string playerName)
+    {
+        return $"/joueurs?player={Uri.EscapeDataString(playerName)}";
     }
 
     private async Task OnCourseChanged(ChangeEventArgs e)

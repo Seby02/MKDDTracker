@@ -34,12 +34,17 @@
             <div class="col-md-6">
                 <label class="form-label">Circuit</label>
 
-                <select class="form-select" @bind="selectedCourse">
+
+                <select class="form-select"
+                        @bind="selectedCourse"
+                        @bind:after="OnCourseChangedAsync">
+
                     @foreach (var course in courses)
                     {
                         <option value="@course">@course</option>
                     }
                 </select>
+
             </div>
 
             <div class="col-md-6">
@@ -59,10 +64,28 @@
             <div class="col-12">
                 <button class="btn btn-primary"
                         @onclick="AnalyzeAsync"
-                        disabled="@loading">
+                        disabled="@(loading || availableSnapshotCount < 2)">
                     @(loading ? "Analyse en cours..." : "Analyser")
                 </button>
             </div>
+
+
+            <div class="col-12">
+
+                <div class="text-muted mb-2">
+                    <strong>Snapshots disponibles :</strong>
+                    @availableSnapshotCount
+                </div>
+
+                @if (!string.IsNullOrWhiteSpace(snapshotMessage))
+                {
+                    <div class="alert alert-warning mb-0">
+                        @snapshotMessage
+                    </div>
+                }
+
+            </div>
+
         </div>
     </div>
 </div>
@@ -224,13 +247,22 @@ else
     private string selectedPlayer = "";
     private string selectedCourse = "";
 
-    private DateTime startDate = new(2026, 9, 1);
-    private DateTime endDate = new(2026, 9, 22);
+    private DateTime startDate = DateTime.Today;
+    private DateTime endDate = DateTime.Today;
+
+    private int availableSnapshotCount;
+    private string? snapshotMessage;
 
     private MkddPlayerEvolutionReport? report;
 
     private bool loading;
     private string? errorMessage;
+
+    [SupplyParameterFromQuery(Name = "player")]
+    private string? PlayerFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "course")]
+    private string? CourseFromQuery { get; set; }
 
     protected override async Task OnInitializedAsync()
     {
@@ -250,24 +282,106 @@ else
                 .Select(x => x.Name)
                 .ToListAsync();
 
-            selectedPlayer = players.Contains("Mattilde F")
-                ? "Mattilde F"
-                : players.FirstOrDefault() ?? "";
 
-            selectedCourse = courses.Contains("Luigi Circuit")
-                ? "Luigi Circuit"
-                : courses.FirstOrDefault() ?? "";
+            // Sélection du joueur transmis depuis sa fiche
+            if (!string.IsNullOrWhiteSpace(PlayerFromQuery) &&
+                players.Contains(PlayerFromQuery))
+            {
+                selectedPlayer = PlayerFromQuery;
+            }
+            else
+            {
+                selectedPlayer = players.Contains("Mattilde F")
+                    ? "Mattilde F"
+                    : players.FirstOrDefault() ?? "";
+            }
+
+            // Sélection du circuit transmis depuis sa fiche
+            if (!string.IsNullOrWhiteSpace(CourseFromQuery) &&
+                courses.Contains(CourseFromQuery))
+            {
+                selectedCourse = CourseFromQuery;
+            }
+            else
+            {
+                selectedCourse = courses.Contains("Luigi Circuit")
+                    ? "Luigi Circuit"
+                    : courses.FirstOrDefault() ?? "";
+            }
+
 
             if (players.Count > 0 && courses.Count > 0)
             {
-                await AnalyzeAsync();
+                await LoadAvailableDatesAsync();
+
+                if (availableSnapshotCount >= 2)
+                {
+                    await AnalyzeAsync();
+                }
             }
+
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
         }
     }
+
+
+    private async Task LoadAvailableDatesAsync()
+    {
+        availableSnapshotCount = 0;
+        snapshotMessage = null;
+
+        if (string.IsNullOrWhiteSpace(selectedCourse))
+            return;
+
+        await using var db = await DbFactory.CreateDbContextAsync();
+
+        var dates = await db.Snapshots
+            .AsNoTracking()
+            .Where(x => x.Course.Name == selectedCourse)
+            .OrderBy(x => x.RankingDate)
+            .Select(x => x.RankingDate)
+            .ToListAsync();
+
+        availableSnapshotCount = dates.Count;
+
+        if (dates.Count == 0)
+        {
+            snapshotMessage =
+                "Aucun snapshot disponible pour ce circuit.";
+
+            return;
+        }
+
+        startDate = dates[0].ToDateTime(TimeOnly.MinValue);
+        endDate = dates[^1].ToDateTime(TimeOnly.MinValue);
+
+        if (dates.Count == 1)
+        {
+            snapshotMessage =
+                "Ce circuit possède un seul snapshot. " +
+                "Il faut au moins deux snapshots pour analyser une évolution.";
+        }
+    }
+
+    // Gérer le changement de circuit
+    private async Task OnCourseChangedAsync()
+    {
+        errorMessage = null;
+        report = null;
+
+        try
+        {
+            await LoadAvailableDatesAsync();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
 
     private async Task AnalyzeAsync()
     {

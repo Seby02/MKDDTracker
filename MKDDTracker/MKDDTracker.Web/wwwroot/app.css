@@ -58,3 +58,116 @@ h1:focus {
 .form-floating > .form-control-plaintext:focus::placeholder, .form-floating > .form-control:focus::placeholder {
     text-align: start;
 }
+
+
+/* ========================================
+   MKDD Tracker - Thème global
+   ======================================== */
+
+:root {
+    --mkdd-primary: #2563eb;
+    --mkdd-gold: #f8c84e;
+    --mkdd-background: #f5f7fb;
+    --mkdd-border: #e3e8f0;
+    --mkdd-radius: 14px;
+}
+
+body {
+    background: var(--mkdd-background);
+    color: #202b3b;
+    font-family: "Segoe UI", system-ui, sans-serif;
+}
+
+/* Titres */
+
+h1 {
+    font-weight: 750;
+    letter-spacing: -0.7px;
+    margin-bottom: 20px;
+}
+
+h2, h3, h4 {
+    font-weight: 650;
+}
+
+/* Cartes */
+
+.card {
+    border: 1px solid var(--mkdd-border);
+    border-radius: var(--mkdd-radius);
+    box-shadow: 0 3px 12px rgba(20, 40, 70, .04);
+}
+
+.card-body {
+    padding: 24px;
+}
+
+/* Boutons */
+
+.btn {
+    border-radius: 9px;
+    font-weight: 500;
+    padding: 9px 16px;
+}
+
+.btn-primary {
+    background: var(--mkdd-primary);
+    border-color: var(--mkdd-primary);
+}
+
+    .btn-primary:hover {
+        background: #1d4ed8;
+        border-color: #1d4ed8;
+    }
+
+/* Champs de formulaire */
+
+.form-control,
+.form-select {
+    border: 1px solid #d9e1ed;
+    border-radius: 9px;
+    padding: 10px 12px;
+}
+
+    .form-control:focus,
+    .form-select:focus {
+        border-color: #2563eb;
+        box-shadow: 0 0 0 3px rgba(37, 99, 235, .12);
+    }
+
+/* Tableaux */
+
+.table {
+    vertical-align: middle;
+}
+
+    .table thead th {
+        color: #5c6a7c;
+        font-size: 13px;
+        font-weight: 650;
+        background: #f3f6fb;
+        border-bottom: 1px solid #e3e8f0;
+    }
+
+    .table tbody td {
+        padding-top: 13px;
+        padding-bottom: 13px;
+    }
+
+/* Liens */
+
+a {
+    text-underline-offset: 3px;
+}
+
+/* Responsive */
+
+@media (max-width: 768px) {
+    h1 {
+        font-size: 1.8rem;
+    }
+
+    .card-body {
+        padding: 16px;
+    }
+}
