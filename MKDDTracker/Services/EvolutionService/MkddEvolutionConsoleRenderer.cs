@@ -185,6 +185,13 @@ public sealed class MkddEvolutionConsoleRenderer
                         MkddMovementRelation.PlayerPassedTarget)
                     .ToList();
 
+            var otherMovements =
+                group
+                    .Where(x =>
+                        x.Relation != MkddMovementRelation.TargetPassedPlayer &&
+                        x.Relation != MkddMovementRelation.PlayerPassedTarget)
+                    .ToList();
+
             Console.WriteLine(
                 $"  {report.PlayerName} depasse :");
 
@@ -254,6 +261,19 @@ public sealed class MkddEvolutionConsoleRenderer
                             report.PlayerName)}");
                 }
             }
+
+            if (otherMovements.Count > 0)
+            {
+                Console.WriteLine();
+                Console.WriteLine("  Autres changements directs :");
+
+                foreach (var movement in otherMovements)
+                {
+                    Console.WriteLine(
+                        $"    - {movement.PlayerName} : " +
+                        $"{FormatMovementRelation(movement)}");
+                }
+            }
         }
 
         Console.WriteLine();
@@ -274,8 +294,47 @@ public sealed class MkddEvolutionConsoleRenderer
             MkddMovementCause.BothImproved =>
                 "progression des deux joueurs",
 
+            MkddMovementCause.TargetRegressed =>
+                $"recul de {targetPlayerName}",
+
+            MkddMovementCause.OpponentRegressed =>
+                "recul de l'adversaire",
+
+            MkddMovementCause.BothRegressed =>
+                "recul des deux joueurs",
+
+            MkddMovementCause.NewEntry =>
+                "nouvelle entree dans le classement",
+
+            MkddMovementCause.PlayerRemoved =>
+                "sortie du classement",
+
+            MkddMovementCause.NoTimeChange =>
+                "aucun changement de chrono",
+
             _ =>
                 "inconnue"
+        };
+    }
+
+    private static string FormatMovementRelation(
+        MkddPlayerMovement movement)
+    {
+        return movement.Relation switch
+        {
+            MkddMovementRelation.TieCreated =>
+                $"egalite creee au rang #{movement.CurrentRank}",
+
+            MkddMovementRelation.TieBroken =>
+                $"egalite rompue (#{movement.PreviousRank} -> #{movement.CurrentRank})",
+
+            MkddMovementRelation.NewEntry =>
+                $"nouvelle entree au rang #{movement.CurrentRank}",
+
+            MkddMovementRelation.PlayerRemoved =>
+                $"sortie du classement (ancien rang #{movement.PreviousRank})",
+
+            _ => movement.Relation.ToString()
         };
     }
 

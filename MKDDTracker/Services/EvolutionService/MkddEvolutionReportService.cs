@@ -23,7 +23,11 @@ public sealed class MkddEvolutionReportService
             evolution.Steps
                 .SelectMany(x => x.Movements)
                 .OrderBy(x => x.PreviousDate)
-                .ThenBy(x => x.CurrentRank)
+                .ThenBy(x =>
+                    x.CurrentRank == 0
+                        ? int.MaxValue
+                        : x.CurrentRank)
+                .ThenBy(x => x.PlayerName, StringComparer.Ordinal)
                 .ToList();
 
         return new MkddPlayerEvolutionReport(
