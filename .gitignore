@@ -365,3 +365,12 @@ FodyWeavers.xsd
 /MKDDTracker-PR4
 /.gitignore
 /.gitignore
+
+# MKDDTracker local SQLite databases and migration artifacts
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.backup-*.db
+mkddtracker-design.db*
+/MKDDTracker-PR5

@@ -20,6 +20,9 @@ var databasePath = MkddDatabasePaths.RealDatabasePath;
 builder.Services.AddDbContextFactory<MkddDbContext>(options =>
     options.UseSqlite($"Data Source={databasePath}"));
 
+builder.Services.AddSingleton<MkddDatabaseBackupService>();
+builder.Services.AddSingleton<MkddDatabaseSchemaInspector>();
+builder.Services.AddScoped<MkddDatabaseInitializer>();
 builder.Services.AddScoped<MkddSnapshotComparisonService>();
 builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
@@ -32,7 +35,12 @@ await using (var scope = app.Services.CreateAsyncScope())
     var dbFactory = scope.ServiceProvider
         .GetRequiredService<IDbContextFactory<MkddDbContext>>();
     await using var db = await dbFactory.CreateDbContextAsync();
-    await db.Database.EnsureCreatedAsync();
+    var databaseInitializer = scope.ServiceProvider
+        .GetRequiredService<MkddDatabaseInitializer>();
+    await databaseInitializer.InitializeAsync(
+        db,
+        databasePath,
+        DatabaseKind.User);
 }
 
 if (!app.Environment.IsDevelopment())

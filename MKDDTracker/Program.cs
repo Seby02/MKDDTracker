@@ -40,7 +40,7 @@ var demoDatabasePath = MkddDatabasePaths.DemoDatabasePath;
 
 if (args.Contains(resetDemoArgument, StringComparer.OrdinalIgnoreCase))
 {
-    DeleteSqliteDatabase(demoDatabasePath);
+    MkddDatabaseFiles.Delete(demoDatabasePath);
 }
 
 var options = new DbContextOptionsBuilder<MkddDbContext>()
@@ -48,7 +48,12 @@ var options = new DbContextOptionsBuilder<MkddDbContext>()
     .Options;
 
 await using var db = new MkddDbContext(options);
-await db.Database.EnsureCreatedAsync();
+var databaseInitializer = new MkddDatabaseInitializer(
+    new MkddDatabaseBackupService());
+await databaseInitializer.InitializeAsync(
+    db,
+    demoDatabasePath,
+    DatabaseKind.Demo);
 
 var html = await File.ReadAllTextAsync(samplePath);
 var performances = new MkddCoursePageParser().Parse(html);
@@ -83,19 +88,3 @@ if (evolution is null)
 
 var report = new MkddEvolutionReportService().BuildReport(evolution);
 new MkddEvolutionConsoleRenderer().Render(report);
-
-static void DeleteSqliteDatabase(string databasePath)
-{
-    foreach (var path in new[]
-             {
-                 databasePath,
-                 $"{databasePath}-shm",
-                 $"{databasePath}-wal"
-             })
-    {
-        if (File.Exists(path))
-        {
-            File.Delete(path);
-        }
-    }
-}
