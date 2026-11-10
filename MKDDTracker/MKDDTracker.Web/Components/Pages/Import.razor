@@ -74,6 +74,13 @@
     </div>
 }
 
+@if (!string.IsNullOrWhiteSpace(informationMessage))
+{
+    <div class="alert alert-info mt-3">
+        @informationMessage
+    </div>
+}
+
 @code {
     private string courseName = "";
     private DateTime rankingDate = DateTime.Today;
@@ -85,6 +92,7 @@
 
     private string? errorMessage;
     private string? successMessage;
+    private string? informationMessage;
 
     private void OnFileSelected(InputFileChangeEventArgs e)
     {
@@ -93,6 +101,7 @@
 
         errorMessage = null;
         successMessage = null;
+        informationMessage = null;
     }
 
     private async Task ImportAsync()
@@ -102,6 +111,7 @@
 
         errorMessage = null;
         successMessage = null;
+        informationMessage = null;
 
         if (string.IsNullOrWhiteSpace(courseName))
         {
@@ -136,16 +146,38 @@
             using var reader = new StreamReader(stream);
 
             var html = await reader.ReadToEndAsync();
+            var selectedRankingDate = DateOnly.FromDateTime(rankingDate);
 
-            var count = await ImportService.ImportAsync(
+            var result = await ImportService.ImportAsync(
                 courseName,
                 html,
-                DateOnly.FromDateTime(rankingDate));
+                selectedRankingDate);
 
-            successMessage =
-                $"Importation réussie : {count} performances " +
-                $"enregistrées pour {courseName} " +
-                $"au {rankingDate:dd/MM/yyyy}.";
+            switch (result.Status)
+            {
+                case SnapshotImportStatus.Created:
+                    successMessage =
+                        $"{result.ImportedPerformances} performances importées " +
+                        $"pour {courseName.Trim()} au {rankingDate:dd/MM/yyyy}.";
+                    break;
+
+                case SnapshotImportStatus.AlreadyExists:
+                    informationMessage =
+                        $"Un classement existe déjà pour {courseName.Trim()} " +
+                        $"au {rankingDate:dd/MM/yyyy}.";
+                    break;
+
+                case SnapshotImportStatus.Replaced:
+                    successMessage =
+                        $"Le classement de {courseName.Trim()} " +
+                        $"au {rankingDate:dd/MM/yyyy} a été remplacé : " +
+                        $"{result.ImportedPerformances} performances importées.";
+                    break;
+
+                case SnapshotImportStatus.Failed:
+                    errorMessage = result.Error ?? "L'import a échoué.";
+                    break;
+            }
         }
         catch (Exception ex)
         {
