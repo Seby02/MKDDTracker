@@ -8,13 +8,17 @@ public sealed class MkddDbContextFactory
 {
     public MkddDbContext CreateDbContext(string[] args)
     {
-        var databasePath = Path.Combine(
-            Path.GetTempPath(),
-            "mkddtracker-design.db");
+        MkddDatabasePaths
+            .EnsureApplicationDataDirectoryExists();
 
-        var options = new DbContextOptionsBuilder<MkddDbContext>()
-            .UseSqlite($"Data Source={databasePath}")
-            .Options;
+        string databasePath =
+            MkddDatabasePaths.RealDatabasePath;
+
+        var options =
+            new DbContextOptionsBuilder<MkddDbContext>()
+                .UseSqlite(
+                    $"Data Source={databasePath}")
+                .Options;
 
         return new MkddDbContext(options);
     }
