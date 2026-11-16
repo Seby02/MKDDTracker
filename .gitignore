@@ -374,3 +374,6 @@ FodyWeavers.xsd
 *.backup-*.db
 mkddtracker-design.db*
 /MKDDTracker-PR5
+
+# Historical import datasets
+imports/

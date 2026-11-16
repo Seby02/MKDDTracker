@@ -29,36 +29,176 @@ internal static class DatabaseTestSupport
         TimeProvider? timeProvider = null) =>
         new(new MkddDatabaseBackupService(timeProvider));
 
-    public static async Task CreateLegacyDatabaseAsync(string databasePath)
+    public static async Task CreateLegacyDatabaseAsync(
+    string databasePath)
     {
-        await using var db = CreateContext(databasePath);
-        await db.Database.EnsureCreatedAsync();
+        //
+        // Création manuelle du schéma historique PR4.
+        //
+        // Ne pas utiliser EnsureCreatedAsync(), car il créerait
+        // également les nouvelles tables Historical*.
+        //
 
-        var course = new MkddCourse { Name = "Luigi Circuit" };
-        var player = new MkddPlayer
+        await using (var connection =
+                     new SqliteConnection(
+                         $"Data Source={databasePath}"))
         {
-            SitePlayerId = 42,
-            Name = "Legacy Player",
-            Country = "FR"
-        };
-        var snapshot = new MkddSnapshot
-        {
-            Course = course,
-            CapturedAt = new DateTime(2026, 9, 15, 12, 30, 0),
-            RankingDate = new DateOnly(2026, 9, 15)
-        };
+            await connection.OpenAsync();
+
+            await using var command =
+                connection.CreateCommand();
+
+            command.CommandText =
+                """
+            PRAGMA foreign_keys = ON;
+
+            CREATE TABLE "Courses" (
+                "Id" INTEGER NOT NULL
+                    CONSTRAINT "PK_Courses"
+                    PRIMARY KEY AUTOINCREMENT,
+                "Name" TEXT NOT NULL
+            );
+
+            CREATE TABLE "Players" (
+                "Id" INTEGER NOT NULL
+                    CONSTRAINT "PK_Players"
+                    PRIMARY KEY AUTOINCREMENT,
+                "SitePlayerId" INTEGER NOT NULL,
+                "Name" TEXT NOT NULL,
+                "Country" TEXT NULL
+            );
+
+            CREATE TABLE "Snapshots" (
+                "Id" INTEGER NOT NULL
+                    CONSTRAINT "PK_Snapshots"
+                    PRIMARY KEY AUTOINCREMENT,
+                "CourseId" INTEGER NOT NULL,
+                "CapturedAt" TEXT NOT NULL,
+                "RankingDate" TEXT NOT NULL,
+                CONSTRAINT "FK_Snapshots_Courses_CourseId"
+                    FOREIGN KEY ("CourseId")
+                    REFERENCES "Courses" ("Id")
+                    ON DELETE CASCADE
+            );
+
+            CREATE TABLE "Performances" (
+                "Id" INTEGER NOT NULL
+                    CONSTRAINT "PK_Performances"
+                    PRIMARY KEY AUTOINCREMENT,
+                "SnapshotId" INTEGER NOT NULL,
+                "PlayerId" INTEGER NOT NULL,
+                "Rank" INTEGER NOT NULL,
+                "Time" TEXT NOT NULL,
+                "Standard" TEXT NULL,
+                "RecordDate" TEXT NOT NULL,
+                "VideoUrl" TEXT NULL,
+                CONSTRAINT "FK_Performances_Players_PlayerId"
+                    FOREIGN KEY ("PlayerId")
+                    REFERENCES "Players" ("Id")
+                    ON DELETE CASCADE,
+                CONSTRAINT "FK_Performances_Snapshots_SnapshotId"
+                    FOREIGN KEY ("SnapshotId")
+                    REFERENCES "Snapshots" ("Id")
+                    ON DELETE CASCADE
+            );
+
+            CREATE UNIQUE INDEX "IX_Courses_Name"
+                ON "Courses" ("Name");
+
+            CREATE UNIQUE INDEX "IX_Players_SitePlayerId"
+                ON "Players" ("SitePlayerId");
+
+            CREATE UNIQUE INDEX
+                "IX_Snapshots_CourseId_RankingDate"
+                ON "Snapshots" (
+                    "CourseId",
+                    "RankingDate"
+                );
+
+            CREATE INDEX "IX_Performances_PlayerId"
+                ON "Performances" ("PlayerId");
+
+            CREATE UNIQUE INDEX
+                "IX_Performances_SnapshotId_PlayerId"
+                ON "Performances" (
+                    "SnapshotId",
+                    "PlayerId"
+                );
+            """;
+
+            await command.ExecuteNonQueryAsync();
+        }
+
+        //
+        // Insertion des données legacy via EF Core.
+        //
+        // EF peut écrire dans les anciennes tables sans avoir
+        // besoin des nouvelles tables Historical*.
+        //
+
+        await using var db =
+            CreateContext(databasePath);
+
+        var course =
+            new MkddCourse
+            {
+                Name = "Luigi Circuit"
+            };
+
+        var player =
+            new MkddPlayer
+            {
+                SitePlayerId = 42,
+                Name = "Legacy Player",
+                Country = "FR"
+            };
+
+        var snapshot =
+            new MkddSnapshot
+            {
+                Course = course,
+
+                CapturedAt =
+                    new DateTime(
+                        2026,
+                        9,
+                        15,
+                        12,
+                        30,
+                        0),
+
+                RankingDate =
+                    new DateOnly(
+                        2026,
+                        9,
+                        15)
+            };
+
         snapshot.Performances.Add(
             new MkddPerformanceEntity
             {
                 Player = player,
+
                 Rank = 1,
-                Time = TimeSpan.FromMilliseconds(74_321),
+
+                Time =
+                    TimeSpan.FromMilliseconds(
+                        74_321),
+
                 Standard = "God",
-                RecordDate = new DateOnly(2026, 9, 14),
-                VideoUrl = "https://example.test/legacy"
+
+                RecordDate =
+                    new DateOnly(
+                        2026,
+                        9,
+                        14),
+
+                VideoUrl =
+                    "https://example.test/legacy"
             });
 
         db.Snapshots.Add(snapshot);
+
         await db.SaveChangesAsync();
     }
 

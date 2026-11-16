@@ -4,6 +4,205 @@ using MKDDTracker.Scraper.Parsing;
 using MKDDTracker.Scraper.Services;
 using MKDDTracker.Scraper.Services.EvolutionService;
 using MKDDTracker.Scraper.Services.SnapshotService;
+using System.Text.Encodings.Web;
+using System.Text.Json;
+using MKDDTracker.Scraper.Services.HistoricalImport;
+
+if (args.Contains(
+    "--analyze-historical-import",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await AnalyzeHistoricalImportAsync();
+    return;
+}
+
+static async Task AnalyzeHistoricalImportAsync()
+{
+    Console.WriteLine(
+        "=== ANALYSE IMPORT HISTORIQUE YAHOO ===");
+
+    Console.WriteLine();
+
+    string projectDirectory =
+        Path.GetFullPath(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                ".."));
+
+    string importDirectory =
+        Path.Combine(
+            projectDirectory,
+            "imports");
+
+    string importFile =
+        Path.Combine(
+            importDirectory,
+            "mkddtracker-import-approved.json");
+
+    string outputDirectory =
+        Path.Combine(
+            importDirectory,
+            "analysis");
+
+    if (!File.Exists(importFile))
+    {
+        Console.WriteLine(
+            $"Fichier introuvable : {importFile}");
+
+        return;
+    }
+
+    Directory.CreateDirectory(
+        outputDirectory);
+
+    //
+    // IMPORTANT :
+    // ici nous utiliserons ensuite exactement
+    // la même configuration que MkddDbContextFactory.
+    //
+
+    string databasePath =
+        MkddDatabasePaths.GetRealDatabasePath();
+
+    Console.WriteLine(
+        $"Import : {importFile}");
+
+    Console.WriteLine(
+        $"Base   : {databasePath}");
+
+    Console.WriteLine();
+
+    var dbOptions =
+        new DbContextOptionsBuilder<MkddDbContext>()
+            .UseSqlite(
+                $"Data Source={databasePath}")
+            .Options;
+
+    await using var db =
+        new MkddDbContext(
+            dbOptions);
+
+    var analyzer =
+        new MkddHistoricalImportAnalyzer(
+            db);
+
+    HistoricalImportAnalysisResult result =
+        await analyzer.AnalyzeAsync(
+            importFile);
+
+    var jsonOptions =
+        new JsonSerializerOptions
+        {
+            WriteIndented = true,
+
+            Encoder =
+                JavaScriptEncoder
+                    .UnsafeRelaxedJsonEscaping
+        };
+
+    WriteJson(
+        Path.Combine(
+            outputDirectory,
+            "historical-import-analysis.json"),
+        result,
+        jsonOptions);
+
+    WriteJson(
+        Path.Combine(
+            outputDirectory,
+            "historical-player-matches.json"),
+        result.Players,
+        jsonOptions);
+
+    WriteJson(
+        Path.Combine(
+            outputDirectory,
+            "historical-course-matches.json"),
+        result.Courses,
+        jsonOptions);
+
+    WriteJson(
+        Path.Combine(
+            outputDirectory,
+            "historical-blocked-records.json"),
+        result.BlockedRecords,
+        jsonOptions);
+
+    Console.WriteLine(
+        "=== RÉSULTAT ===");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Entrées JSON           : " +
+        $"{result.InputRecordsCount:N0}");
+
+    Console.WriteLine(
+        $"Entrées mappables      : " +
+        $"{result.MappableRecordsCount:N0}");
+
+    Console.WriteLine(
+        $"Entrées bloquées       : " +
+        $"{result.BlockedRecordsCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Joueurs Yahoo uniques  : " +
+        $"{result.UniqueExternalPlayersCount:N0}");
+
+    Console.WriteLine(
+        $"Joueurs correspondants : " +
+        $"{result.MatchedPlayersCount:N0}");
+
+    Console.WriteLine(
+        $"Joueurs non trouvés    : " +
+        $"{result.UnmatchedPlayersCount:N0}");
+
+    Console.WriteLine(
+        $"Joueurs ambigus        : " +
+        $"{result.AmbiguousPlayersCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Circuits déjà présents          : " +
+        $"{result.MatchedCoursesCount:N0}");
+
+    Console.WriteLine(
+        $"Circuits à créer                : " +
+        $"{result.CreatableCoursesCount:N0}");
+
+    Console.WriteLine(
+        $"Codes circuits non pris en charge : " +
+        $"{result.UnsupportedCoursesCount:N0}");
+
+    Console.WriteLine(
+        $"Entrées avec circuit à créer    : " +
+        $"{result.RecordsUsingCreatableCoursesCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Rapports : {outputDirectory}");
+}
+
+static void WriteJson<T>(
+    string filePath,
+    T value,
+    JsonSerializerOptions options)
+{
+    string json =
+        JsonSerializer.Serialize(
+            value,
+            options);
+
+    File.WriteAllText(
+        filePath,
+        json);
+}
 
 const string seedDemoArgument = "--seed-demo";
 const string resetDemoArgument = "--reset-demo";
