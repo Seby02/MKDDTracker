@@ -377,3 +377,5 @@ mkddtracker-design.db*
 
 # Historical import datasets
 imports/
+/MKDDTracker/mkdd-model-for-import.txt
+/MKDDTracker/historical-import-migration.sql
