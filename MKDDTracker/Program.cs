@@ -24,6 +24,13 @@ if (args.Contains(
     return;
 }
 
+if (args.Contains(
+    "--import-historical",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await ImportHistoricalAsync();
+    return;
+}
 
 
 const string seedDemoArgument = "--seed-demo";
@@ -444,4 +451,154 @@ static void WriteJson<T>(
     File.WriteAllText(
         filePath,
         json);
+}
+
+static async Task ImportHistoricalAsync()
+{
+    Console.WriteLine(
+        "=== IMPORT HISTORIQUE YAHOO ===");
+
+    Console.WriteLine();
+
+    string projectDirectory =
+        Path.GetFullPath(
+            Path.Combine(
+                AppContext.BaseDirectory,
+                "..",
+                "..",
+                ".."));
+
+    string importFile =
+        Path.Combine(
+            projectDirectory,
+            "imports",
+            "mkddtracker-import-approved.json");
+
+    if (!File.Exists(importFile))
+    {
+        Console.WriteLine(
+            $"Fichier introuvable : {importFile}");
+
+        return;
+    }
+
+    string databasePath =
+        MkddDatabasePaths.RealDatabasePath;
+
+    if (!File.Exists(databasePath))
+    {
+        Console.WriteLine(
+            $"Base introuvable : {databasePath}");
+
+        return;
+    }
+
+    Console.WriteLine(
+        $"Import : {importFile}");
+
+    Console.WriteLine(
+        $"Base   : {databasePath}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        "ATTENTION : cette commande écrit dans la base réelle.");
+
+    Console.WriteLine(
+        "Tape IMPORTER pour continuer :");
+
+    string? confirmation =
+        Console.ReadLine();
+
+    if (!string.Equals(
+            confirmation,
+            "IMPORTER",
+            StringComparison.Ordinal))
+    {
+        Console.WriteLine(
+            "Import annulé.");
+
+        return;
+    }
+
+    var dbOptions =
+        new DbContextOptionsBuilder<MkddDbContext>()
+            .UseSqlite(
+                $"Data Source={databasePath}")
+            .Options;
+
+    await using var db =
+        new MkddDbContext(
+            dbOptions);
+
+    var service =
+        new MkddHistoricalImportService(
+            db);
+
+    HistoricalImportExecutionResult result =
+        await service.ImportAsync(
+            importFile);
+
+    Console.WriteLine();
+    Console.WriteLine("=== RÉSULTAT ===");
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Entrées JSON              : " +
+        $"{result.InputRecordsCount:N0}");
+
+    Console.WriteLine(
+        $"Enregistrements invalides : " +
+        $"{result.InvalidRecordsCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Circuits créés            : " +
+        $"{result.CoursesCreatedCount:N0}");
+
+    Console.WriteLine(
+        $"Alias créés               : " +
+        $"{result.AliasesCreatedCount:N0}");
+
+    Console.WriteLine(
+        $"Alias avec joueur moderne : " +
+        $"{result.AliasesMatchedToPlayersCount:N0}");
+
+    Console.WriteLine(
+        $"Alias sans joueur moderne : " +
+        $"{result.AliasesWithoutPlayerCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Performances existantes   : " +
+        $"{result.PerformancesExistingCount:N0}");
+
+    Console.WriteLine(
+        $"Performances créées       : " +
+        $"{result.PerformancesCreatedCount:N0}");
+
+    Console.WriteLine(
+        $"Sources créées            : " +
+        $"{result.SourcesCreatedCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Transaction validée       : " +
+        $"{result.TransactionCommitted}");
+
+    if (result.Errors.Count > 0)
+    {
+        Console.WriteLine();
+        Console.WriteLine("Erreurs");
+
+        foreach (string error
+                 in result.Errors)
+        {
+            Console.WriteLine(
+                $"  - {error}");
+        }
+    }
 }
