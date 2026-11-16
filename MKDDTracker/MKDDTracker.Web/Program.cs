@@ -28,6 +28,7 @@ builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
 builder.Services.AddScoped<MkddSnapshotImportService>();
 builder.Services.AddScoped<MkddHistoricalRankingService>();
+  builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
 
 var app = builder.Build();
 
