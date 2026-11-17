@@ -122,14 +122,20 @@ public sealed class MkddHistoricalPlayerTimelineService
         if (inPeriod.Count == 0)
             return null;
 
-        List<ConsolidatedPerformance> consolidatedPerformances = inPeriod
-            .GroupBy(performance => new TimelineDeduplicationKey(
-                BuildIdentityKey(performance, player),
-                performance.CourseId,
-                performance.TimeType,
-                performance.Time,
-                DateOnly.FromDateTime(performance.FirstSeenAt.UtcDateTime)))
-            .SelectMany(group => ConsolidateForProfile(group, preserveFrequencyCategories))
+        List<ConsolidatedHistoricalPerformance<TimelinePerformance>> consolidatedPerformances =
+            HistoricalPerformanceConsolidator.Consolidate(
+                inPeriod,
+                performance => new HistoricalPerformanceDeduplicationKey(
+                    BuildIdentityKey(performance, player),
+                    performance.CourseId,
+                    performance.TimeType,
+                    performance.Time,
+                    DateOnly.FromDateTime(performance.FirstSeenAt.ToUniversalTime().UtcDateTime)),
+                performance => performance.Frequency,
+                performance => performance.SourceSystem,
+                performance => performance.FirstSeenAt,
+                performance => performance.SequenceNumber,
+                preserveFrequencyCategories)
             .Where(item => MatchesFrequencyFilter(item.Preferred.Frequency, frequencyFilter))
             .OrderBy(item => item.Preferred.FirstSeenAt.ToUniversalTime())
             .ThenBy(item => item.Preferred.SequenceNumber)
@@ -140,7 +146,7 @@ public sealed class MkddHistoricalPlayerTimelineService
         TimeSpan? previousTime = null;
         int? previousRank = null;
 
-        foreach (ConsolidatedPerformance consolidated in consolidatedPerformances)
+        foreach (ConsolidatedHistoricalPerformance<TimelinePerformance> consolidated in consolidatedPerformances)
         {
             TimelinePerformance performance = consolidated.Preferred;
             DateTimeOffset utcFirstSeenAt = performance.FirstSeenAt.ToUniversalTime();
@@ -210,25 +216,6 @@ public sealed class MkddHistoricalPlayerTimelineService
             };
     }
 
-    private static IEnumerable<ConsolidatedPerformance> ConsolidateForProfile(
-        IEnumerable<TimelinePerformance> performances,
-        bool preserveFrequencyCategories)
-    {
-        List<TimelinePerformance> group = performances.ToList();
-        int knownFrequencyCount = group
-            .Where(performance => performance.Frequency.HasValue)
-            .Select(performance => performance.Frequency)
-            .Distinct()
-            .Count();
-
-        if (!preserveFrequencyCategories || knownFrequencyCount <= 1)
-            return [Consolidate(group)];
-
-        return group
-            .GroupBy(performance => performance.Frequency)
-            .Select(frequencyGroup => Consolidate(frequencyGroup));
-    }
-
     private static bool MatchesFrequencyFilter(
         int? frequency,
         HistoricalFrequencyFilter frequencyFilter)
@@ -241,29 +228,6 @@ public sealed class MkddHistoricalPlayerTimelineService
             HistoricalFrequencyFilter.Unknown => frequency is null,
             _ => false
         };
-    }
-
-    private static ConsolidatedPerformance Consolidate(
-        IEnumerable<TimelinePerformance> performances)
-    {
-        List<TimelinePerformance> group = performances.ToList();
-        TimelinePerformance preferred = group
-            .OrderByDescending(performance => performance.Frequency.HasValue)
-            .ThenByDescending(performance =>
-                performance.Frequency.HasValue &&
-                string.Equals(performance.SourceSystem, "YahooGroups", StringComparison.OrdinalIgnoreCase))
-            .ThenBy(performance => performance.FirstSeenAt.ToUniversalTime())
-            .ThenBy(performance => performance.SequenceNumber)
-            .First();
-
-        IReadOnlyList<string> sources = group
-            .Select(performance => performance.SourceSystem)
-            .Where(source => !string.IsNullOrWhiteSpace(source))
-            .Distinct(StringComparer.OrdinalIgnoreCase)
-            .OrderBy(source => source, StringComparer.OrdinalIgnoreCase)
-            .ToList();
-
-        return new ConsolidatedPerformance(preferred, sources);
     }
 
     private static string BuildIdentityKey(
@@ -293,14 +257,4 @@ public sealed class MkddHistoricalPlayerTimelineService
         string DateSource,
         string ExternalKey);
 
-    private sealed record ConsolidatedPerformance(
-        TimelinePerformance Preferred,
-        IReadOnlyList<string> Sources);
-
-    private readonly record struct TimelineDeduplicationKey(
-        string PlayerIdentity,
-        int CourseId,
-        string TimeType,
-        TimeSpan Time,
-        DateOnly UtcDate);
 }

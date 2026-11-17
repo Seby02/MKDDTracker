@@ -1,10 +1,10 @@
 ﻿@page "/"
 @rendermode InteractiveServer
 
-@using Microsoft.EntityFrameworkCore
-@using MKDDTracker.Scraper.Data.Database
+@using MKDDTracker.Scraper.Models.Dashboard
+@using MKDDTracker.Scraper.Services.Dashboard
 
-@inject IDbContextFactory<MkddDbContext> DbFactory
+@inject MkddHistoricalDashboardService DashboardService
 
 <PageTitle>Accueil - MKDD Tracker</PageTitle>
 
@@ -25,85 +25,80 @@ else if (!string.IsNullOrEmpty(errorMessage))
         @errorMessage
     </div>
 }
+else if (dashboard is null)
+{
+    <p>Aucune donnée historique disponible.</p>
+}
 else
 {
-    <!-- Statistiques principales -->
     <div class="row g-3 mb-4">
-
-        <div class="col-md-4">
-            <div class="card h-100 shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Circuits</h6>
-                    <h2 class="mb-0">@courseCount</h2>
-                    <small class="text-muted">
-                        Circuits enregistrés
-                    </small>
-                </div>
-            </div>
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+                <h6 class="text-muted">Performances historiques</h6>
+                <h2 class="mb-0">@dashboard.TotalPerformanceCount</h2>
+            </div></div>
         </div>
-
-        <div class="col-md-4">
-            <div class="card h-100 shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Joueurs</h6>
-                    <h2 class="mb-0">@playerCount</h2>
-                    <small class="text-muted">
-                        Joueurs uniques
-                    </small>
-                </div>
-            </div>
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+                <h6 class="text-muted">Identités historiques</h6>
+                <h2 class="mb-0">@dashboard.HistoricalIdentityCount</h2>
+            </div></div>
         </div>
-
-        <div class="col-md-4">
-            <div class="card h-100 shadow-sm">
-                <div class="card-body">
-                    <h6 class="text-muted">Snapshots</h6>
-                    <h2 class="mb-0">@snapshotCount</h2>
-                    <small class="text-muted">
-                        Classements sauvegardés
-                    </small>
-                </div>
-            </div>
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+                <h6 class="text-muted">Joueurs modernes reliés</h6>
+                <h2 class="mb-0">@dashboard.ModernLinkedPlayerCount</h2>
+            </div></div>
         </div>
-
-    </div>
-
-    <!-- Dernière date de classement -->
-    <div class="card mb-4 shadow-sm">
-        <div class="card-body">
-
-            <h5 class="card-title">
-                Dernier classement enregistré
-            </h5>
-
-            @if (latestRankingDate is null)
-            {
-                <p class="text-muted mb-0">
-                    Aucun classement enregistré.
-                </p>
-            }
-            else
-            {
-                <p class="fs-4 mb-0">
-                    @latestRankingDate.Value.ToString("dd/MM/yyyy")
-                </p>
-            }
-
+        <div class="col-md-3">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+                <h6 class="text-muted">Circuits avec historique</h6>
+                <h2 class="mb-0">@dashboard.CourseCount</h2>
+            </div></div>
         </div>
     </div>
 
-    <!-- Derniers snapshots -->
+    <div class="row g-3 mb-4">
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+                <h5 class="card-title">Période historique</h5>
+                <div>Première date historique plausible : <strong>@FormatDate(dashboard.FirstSeenAt)</strong></div>
+                <div>Dernière date historique : <strong>@FormatDate(dashboard.LastSeenAt)</strong></div>
+            </div></div>
+        </div>
+        <div class="col-md-6">
+            <div class="card h-100 shadow-sm"><div class="card-body">
+                <h5 class="card-title">Sources</h5>
+                <div>Yahoo Groups : <strong>@dashboard.YahooGroupsCount</strong></div>
+                <div>MKDDTracker : <strong>@dashboard.MkddTrackerCount</strong></div>
+            </div></div>
+        </div>
+        <div class="col-md-4">
+            <div class="card h-100"><div class="card-body">
+                <h6 class="card-title">Type de performance</h6>
+                <div>ThreeLap : <strong>@dashboard.ThreeLapCount</strong></div>
+                <div>Flap : <strong>@dashboard.FlapCount</strong></div>
+            </div></div>
+        </div>
+        <div class="col-md-8">
+            <div class="card h-100"><div class="card-body">
+                <h6 class="card-title">Fréquence</h6>
+                <div class="d-flex flex-wrap gap-3">
+                    <span>50 Hz : <strong>@dashboard.Hz50Count</strong></span>
+                    <span>60 Hz : <strong>@dashboard.Hz60Count</strong></span>
+                    <span>Inconnue : <strong>@dashboard.UnknownFrequencyCount</strong></span>
+                </div>
+            </div></div>
+        </div>
+    </div>
+
     <div class="card mb-4 shadow-sm">
         <div class="card-body">
-
-            <h5 class="card-title mb-3">
-                Derniers classements
-            </h5>
-
-            @if (latestSnapshots.Count == 0)
+            <h5 class="card-title mb-3">Activité historique récente</h5>
+            @if (dashboard.RecentEvents.Count == 0)
             {
                 <p class="text-muted">
-                    Aucun snapshot disponible.
+                    Aucune performance historique disponible.
                 </p>
             }
             else
@@ -112,31 +107,37 @@ else
                     <table class="table table-striped table-hover">
                         <thead>
                             <tr>
-                                <th>Circuit</th>
                                 <th>Date</th>
-                                <th>Performances</th>
+                                <th>Joueur</th>
+                                <th>Circuit</th>
+                                <th>Type</th>
+                                <th>Fréquence</th>
+                                <th>Chrono</th>
+                                <th>Source</th>
+                                <th>Navigation</th>
                             </tr>
                         </thead>
                         <tbody>
-                            @foreach (var snapshot in latestSnapshots)
+                            @foreach (MkddHistoricalDashboardEvent historicalEvent in dashboard.RecentEvents)
                             {
                                 <tr>
-                                    <td>@snapshot.CourseName</td>
-                                    <td>
-                                        @snapshot.RankingDate.ToString("dd/MM/yyyy")
+                                    <td>@FormatDate(historicalEvent.FirstSeenAt)</td>
+                                    <td><a href="@GetPlayerUrl(historicalEvent)">@historicalEvent.PlayerName</a></td>
+                                    <td>@historicalEvent.CourseName</td>
+                                    <td>@historicalEvent.TimeType</td>
+                                    <td>@FormatFrequency(historicalEvent.Frequency)</td>
+                                    <td>@FormatTime(historicalEvent.Time)</td>
+                                    <td>@string.Join(" + ", historicalEvent.Sources)</td>
+                                    <td class="text-nowrap">
+                                        <a class="btn btn-sm btn-outline-secondary me-1" href="@GetRankingUrl(historicalEvent)">Classement</a>
+                                        <a class="btn btn-sm btn-outline-primary" href="@GetEvolutionUrl(historicalEvent)">Évolution</a>
                                     </td>
-                                    <td>@snapshot.PerformanceCount</td>
                                 </tr>
                             }
                         </tbody>
                     </table>
                 </div>
             }
-
-            <a class="btn btn-outline-primary"
-               href="/classements">
-                Voir les classements
-            </a>
 
         </div>
     </div>
@@ -211,44 +212,13 @@ else
 @code {
     private bool loading = true;
     private string? errorMessage;
-
-    private int courseCount;
-    private int playerCount;
-    private int snapshotCount;
-
-    private DateOnly? latestRankingDate;
-
-    private List<SnapshotSummary> latestSnapshots = [];
+    private MkddHistoricalDashboard? dashboard;
 
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            await using var db =
-                await DbFactory.CreateDbContextAsync();
-
-            courseCount = await db.Courses.CountAsync();
-
-            playerCount = await db.Players.CountAsync();
-
-            snapshotCount = await db.Snapshots.CountAsync();
-
-            latestSnapshots = await db.Snapshots
-                .AsNoTracking()
-                .OrderByDescending(x => x.RankingDate)
-                .ThenByDescending(x => x.Id)
-                .Take(5)
-                .Select(x => new SnapshotSummary(
-                    x.Course.Name,
-                    x.RankingDate,
-                    x.Performances.Count))
-                .ToListAsync();
-
-            if (latestSnapshots.Count > 0)
-            {
-                latestRankingDate =
-                    latestSnapshots[0].RankingDate;
-            }
+            dashboard = await DashboardService.GetDashboardAsync();
         }
         catch (Exception ex)
         {
@@ -260,8 +230,42 @@ else
         }
     }
 
-    private sealed record SnapshotSummary(
-        string CourseName,
-        DateOnly RankingDate,
-        int PerformanceCount);
+    private static string FormatDate(DateTimeOffset? date) =>
+        date?.ToUniversalTime().ToString("dd/MM/yyyy") ?? "—";
+
+    private static string FormatDate(DateTimeOffset date) =>
+        date.ToUniversalTime().ToString("dd/MM/yyyy");
+
+    private static string FormatFrequency(int? frequency) => frequency switch
+    {
+        50 => "50 Hz",
+        60 => "60 Hz",
+        _ => "Inconnue"
+    };
+
+    private static string FormatTime(TimeSpan time) =>
+        $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+
+    private static string GetPlayerUrl(MkddHistoricalDashboardEvent historicalEvent) =>
+        $"/joueurs?player={Uri.EscapeDataString(historicalEvent.PlayerKey)}";
+
+    private static string GetRankingUrl(MkddHistoricalDashboardEvent historicalEvent) =>
+        "/ranking?" +
+        $"course={Uri.EscapeDataString(historicalEvent.CourseName)}&" +
+        $"type={Uri.EscapeDataString(historicalEvent.TimeType)}&" +
+        $"frequency={Uri.EscapeDataString(FormatFrequencyQueryValue(historicalEvent.Frequency))}";
+
+    private static string GetEvolutionUrl(MkddHistoricalDashboardEvent historicalEvent) =>
+        "/evolution?" +
+        $"player={Uri.EscapeDataString(historicalEvent.PlayerKey)}&" +
+        $"course={Uri.EscapeDataString(historicalEvent.CourseName)}&" +
+        $"type={Uri.EscapeDataString(historicalEvent.TimeType)}&" +
+        $"frequency={Uri.EscapeDataString(FormatFrequencyQueryValue(historicalEvent.Frequency))}";
+
+    private static string FormatFrequencyQueryValue(int? frequency) => frequency switch
+    {
+        50 => "Hz50",
+        60 => "Hz60",
+        _ => "Unknown"
+    };
 }

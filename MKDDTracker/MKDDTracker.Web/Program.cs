@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
+using MKDDTracker.Scraper.Services.Dashboard;
 using MKDDTracker.Scraper.Services.EvolutionService;
 using MKDDTracker.Scraper.Services.SnapshotService;
 using MKDDTracker.Web.Components;
@@ -23,6 +24,7 @@ builder.Services.AddDbContextFactory<MkddDbContext>(options =>
 builder.Services.AddSingleton<MkddDatabaseBackupService>();
 builder.Services.AddSingleton<MkddDatabaseSchemaInspector>();
 builder.Services.AddScoped<MkddDatabaseInitializer>();
+builder.Services.AddScoped<MkddHistoricalDashboardService>();
 builder.Services.AddScoped<MkddSnapshotComparisonService>();
 builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
