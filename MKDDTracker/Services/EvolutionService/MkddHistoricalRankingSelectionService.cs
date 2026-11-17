@@ -107,4 +107,38 @@ public sealed class MkddHistoricalRankingSelectionService
             LastSeenAt = dates.Count == 0 ? null : dates.Max()
         };
     }
+
+    public async Task<HistoricalPerformanceDateRange> GetDateRangeAsync(
+        string courseName,
+        string timeType,
+        HistoricalFrequencyFilter frequencyFilter,
+        CancellationToken cancellationToken = default)
+    {
+        await using var db = await _dbFactory.CreateDbContextAsync(cancellationToken);
+
+        IQueryable<MkddHistoricalPerformance> query = db.HistoricalPerformances
+            .AsNoTracking()
+            .Where(performance =>
+                performance.Course.Name == courseName &&
+                performance.TimeType == timeType);
+
+        query = frequencyFilter switch
+        {
+            HistoricalFrequencyFilter.Hz50 => query.Where(performance => performance.Frequency == 50),
+            HistoricalFrequencyFilter.Hz60 => query.Where(performance => performance.Frequency == 60),
+            HistoricalFrequencyFilter.Unknown => query.Where(performance => performance.Frequency == null),
+            _ => query.Where(_ => false)
+        };
+
+        List<DateTimeOffset> dates = await query
+            .Select(performance => performance.FirstSeenAt)
+            .ToListAsync(cancellationToken);
+
+        return new HistoricalPerformanceDateRange
+        {
+            Count = dates.Count,
+            FirstSeenAt = dates.Count == 0 ? null : dates.Min(),
+            LastSeenAt = dates.Count == 0 ? null : dates.Max()
+        };
+    }
 }

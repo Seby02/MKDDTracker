@@ -9,6 +9,30 @@ using System.Text.Json;
 using MKDDTracker.Scraper.Services.HistoricalImport;
 using System.Globalization;
 
+if (args.Contains(
+    "--dry-run-fix-pre2003-dates",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await RunPre2003DateCorrectionAsync(dryRun: true);
+    return;
+}
+
+if (args.Contains(
+    "--fix-pre2003-dates",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await RunPre2003DateCorrectionAsync(dryRun: false);
+    return;
+}
+
+if (args.Contains(
+    "--diagnose-history-years",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await DiagnoseHistoryYearsAsync();
+    return;
+}
+
 int diagnosticIndex = Array.FindIndex(
     args,
     argument => string.Equals(
@@ -87,6 +111,69 @@ static async Task RunSnapshotHistoryMigrationAsync(bool dryRun)
     MkddSnapshotHistoryMigrationResult result = await service.ImportAsync(progress);
     PrintSnapshotMigrationResult(result);
     Console.WriteLine($"Événements importés : {result.PrEventsImported:N0}");
+}
+
+static async Task RunPre2003DateCorrectionAsync(bool dryRun)
+{
+    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
+    if (!File.Exists(databasePath))
+    {
+        Console.WriteLine($"Base introuvable : {databasePath}");
+        return;
+    }
+
+    var options = new DbContextOptionsBuilder<MkddDbContext>()
+        .UseSqlite($"Data Source={databasePath}")
+        .Options;
+    await using var db = new MkddDbContext(options);
+    var service = new Pre2003DateCorrectionService(db);
+
+    if (dryRun)
+    {
+        Console.WriteLine("=== DRY-RUN CORRECTION DES DATES PRÉ-2003 ===");
+        PrintPre2003DateCorrectionPlan(await service.AnalyzeAsync());
+        return;
+    }
+
+    Console.WriteLine("=== CORRECTION DES DATES PRÉ-2003 ===");
+    Console.WriteLine("Cette commande modifie la base réelle dans une transaction.");
+    PrintPre2003DateCorrectionPlan(await service.AnalyzeAsync());
+    Console.WriteLine("Tapez exactement CORRIGER pour continuer :");
+    if (!string.Equals(Console.ReadLine(), "CORRIGER", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Correction annulée.");
+        return;
+    }
+
+    try
+    {
+        Pre2003DateCorrectionPlan result = await service.CorrectAsync();
+        Console.WriteLine("Correction validée.");
+        PrintPre2003DateCorrectionPlan(result);
+    }
+    catch (Exception exception)
+    {
+        Console.Error.WriteLine($"Correction annulée ; transaction annulée : {exception.Message}");
+        Environment.ExitCode = 1;
+    }
+}
+
+static void PrintPre2003DateCorrectionPlan(Pre2003DateCorrectionPlan plan)
+{
+    Console.WriteLine($"Performances concernées : {plan.PerformanceCount:N0}");
+    Console.WriteLine($"Messages concernés : {plan.Messages.Count:N0}");
+    Console.WriteLine($"Sources concernées : {plan.SourceCount:N0}");
+    foreach (Pre2003DateCorrectionMessagePlan message in plan.Messages)
+    {
+        string previousDates = message.PreviousFirstSeenAt.Count == 0
+            ? "aucune"
+            : string.Join(", ", message.PreviousFirstSeenAt.Select(date =>
+                date.ToString("O", CultureInfo.InvariantCulture)));
+        Console.WriteLine(
+            $"MessageId {message.MessageId} : {previousDates} → " +
+            message.CorrectedFirstSeenAt.ToString("O", CultureInfo.InvariantCulture) +
+            $" ({message.PerformanceCount:N0} performances, {message.SourceCount:N0} sources)");
+    }
 }
 
 static void PrintSnapshotMigrationResult(MkddSnapshotHistoryMigrationResult result)
@@ -239,6 +326,170 @@ static string FormatDiagnosticDate(DateOnly? date) =>
 
 static string FormatDiagnosticDateTime(DateTimeOffset? date) =>
     date?.ToString("O", CultureInfo.InvariantCulture) ?? "aucune";
+
+static async Task DiagnoseHistoryYearsAsync()
+{
+    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
+    if (!File.Exists(databasePath))
+    {
+        Console.WriteLine($"Base introuvable : {databasePath}");
+        return;
+    }
+
+    var options = new DbContextOptionsBuilder<MkddDbContext>()
+        .UseSqlite($"Data Source={databasePath}")
+        .Options;
+    await using var db = new MkddDbContext(options);
+
+    var performances = await db.HistoricalPerformances
+        .AsNoTracking()
+        .Select(performance => new
+        {
+            performance.Id,
+            Player = performance.HistoricalPlayerAlias.Player != null
+                ? performance.HistoricalPlayerAlias.Player.Name
+                : performance.HistoricalPlayerAlias.ExternalName,
+            Course = performance.Course.Name,
+            performance.TimeType,
+            performance.Frequency,
+            performance.Time,
+            performance.FirstSeenAt,
+            performance.SourceSystem,
+            performance.DateSource,
+            performance.ImportStatus,
+            performance.ExternalKey
+        })
+        .ToListAsync();
+
+    DateTimeOffset? earliest = performances.Count == 0
+        ? null
+        : performances.Min(performance => performance.FirstSeenAt);
+    DateTimeOffset? latest = performances.Count == 0
+        ? null
+        : performances.Max(performance => performance.FirstSeenAt);
+
+    static int GetUtcYear(DateTimeOffset date) =>
+        date.ToUniversalTime().UtcDateTime.Year;
+
+    Console.WriteLine("=== DIAGNOSTIC DES ANNÉES HISTORIQUES ===");
+    Console.WriteLine("Mode lecture seule : aucune donnée n'est modifiée.");
+    Console.WriteLine($"FirstSeenAt minimum : {FormatDiagnosticDateTime(earliest)}");
+    Console.WriteLine($"FirstSeenAt maximum : {FormatDiagnosticDateTime(latest)}");
+    Console.WriteLine();
+
+    var before2003 = performances
+        .Where(performance => GetUtcYear(performance.FirstSeenAt) < 2003)
+        .OrderBy(performance => performance.FirstSeenAt.ToUniversalTime())
+        .ThenBy(performance => performance.Id)
+        .ToList();
+    var yahooPerformanceIds = before2003
+        .Where(performance => string.Equals(
+            performance.SourceSystem,
+            "YahooGroups",
+            StringComparison.OrdinalIgnoreCase))
+        .Select(performance => performance.Id)
+        .ToList();
+    var yahooSources = await db.HistoricalPerformanceSources
+        .AsNoTracking()
+        .Where(source => yahooPerformanceIds.Contains(source.HistoricalPerformanceId))
+        .Select(source => new
+        {
+            source.HistoricalPerformanceId,
+            source.MessageId,
+            source.PublishedAt,
+            source.SourceFile,
+            source.OriginalTime,
+            source.SourceLine,
+            source.ImportStatus
+        })
+        .ToListAsync();
+    var sourcesByPerformance = yahooSources
+        .GroupBy(source => source.HistoricalPerformanceId)
+        .ToDictionary(group => group.Key, group => group.ToList());
+
+    Console.WriteLine("Performances antérieures au 01/01/2003 (FirstSeenAt UTC)");
+    Console.WriteLine("Joueur | Circuit | Type | Fréquence | Chrono | FirstSeenAt | SourceSystem | DateSource | ImportStatus | ExternalKey");
+    foreach (var performance in before2003)
+    {
+        Console.WriteLine(
+            $"{performance.Player} | {performance.Course} | {performance.TimeType} | " +
+            $"{performance.Frequency?.ToString(CultureInfo.InvariantCulture) ?? "Inconnue"} | " +
+            $"{FormatDiagnosticTime(performance.Time)} | " +
+            $"{performance.FirstSeenAt.ToString("O", CultureInfo.InvariantCulture)} | " +
+            $"{performance.SourceSystem} | {performance.DateSource} | {performance.ImportStatus} | {performance.ExternalKey ?? "aucune"}");
+
+        if (string.Equals(performance.SourceSystem, "YahooGroups", StringComparison.OrdinalIgnoreCase))
+        {
+            if (sourcesByPerformance.TryGetValue(performance.Id, out var sources) && sources.Count > 0)
+            {
+                foreach (var source in sources)
+                {
+                    Console.WriteLine(
+                        $"  Source Yahoo | MessageId: {source.MessageId} | " +
+                        $"PublishedAt: {FormatDiagnosticDateTime(source.PublishedAt)} | " +
+                        $"SourceFile: {source.SourceFile ?? "aucun"} | " +
+                        $"OriginalTime: {source.OriginalTime ?? "aucun"} | " +
+                        $"SourceLine: {source.SourceLine ?? "aucune"} | ImportStatus: {source.ImportStatus}");
+                }
+            }
+            else
+            {
+                Console.WriteLine("  Source Yahoo : aucune source associée.");
+            }
+        }
+    }
+
+    if (before2003.Count == 0)
+        Console.WriteLine("Aucune performance antérieure au 01/01/2003.");
+    Console.WriteLine();
+
+    Console.WriteLine("Performances par année UTC");
+    foreach (var yearGroup in performances
+                 .GroupBy(performance => GetUtcYear(performance.FirstSeenAt))
+                 .OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{yearGroup.Key} : {yearGroup.Count():N0}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("Performances par année et SourceSystem (2012 et suivantes, UTC)");
+    foreach (var yearGroup in performances
+                 .Where(performance => GetUtcYear(performance.FirstSeenAt) >= 2012)
+                 .GroupBy(performance => GetUtcYear(performance.FirstSeenAt))
+                 .OrderBy(group => group.Key))
+    {
+        Console.WriteLine($"{yearGroup.Key} :");
+        foreach (var sourceGroup in yearGroup
+                     .GroupBy(performance => performance.SourceSystem)
+                     .OrderBy(group => group.Key, StringComparer.OrdinalIgnoreCase))
+        {
+            Console.WriteLine($"  {sourceGroup.Key} : {sourceGroup.Count():N0}");
+        }
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("20 dernières performances de 2019 (FirstSeenAt UTC)");
+    Console.WriteLine("Joueur | Circuit | Type | Fréquence | Chrono | FirstSeenAt | SourceSystem | DateSource | ImportStatus");
+    var latest2019 = performances
+        .Where(performance => GetUtcYear(performance.FirstSeenAt) == 2019)
+        .OrderByDescending(performance => performance.FirstSeenAt.ToUniversalTime())
+        .ThenByDescending(performance => performance.Id)
+        .Take(20)
+        .ToList();
+
+    foreach (var performance in latest2019)
+    {
+        Console.WriteLine(
+            $"{performance.Player} | {performance.Course} | {performance.TimeType} | " +
+            $"{performance.Frequency?.ToString(CultureInfo.InvariantCulture) ?? "Inconnue"} | " +
+            $"{FormatDiagnosticTime(performance.Time)} | " +
+            $"{performance.FirstSeenAt.ToString("O", CultureInfo.InvariantCulture)} | " +
+            $"{performance.SourceSystem} | {performance.DateSource} | {performance.ImportStatus}");
+    }
+
+    if (latest2019.Count == 0)
+        Console.WriteLine("Aucune performance en 2019.");
+}
 
 if (args.Contains(
     "--dry-run-historical-import",

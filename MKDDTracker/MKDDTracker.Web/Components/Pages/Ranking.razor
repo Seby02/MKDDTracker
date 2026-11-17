@@ -1,44 +1,56 @@
 ﻿@page "/ranking"
 @rendermode InteractiveServer
 
-@using Microsoft.EntityFrameworkCore
-@using MKDDTracker.Scraper.Data.Database
+@using MKDDTracker.Scraper.Models.Evolution
+@using MKDDTracker.Scraper.Services.EvolutionService
 
-@inject IDbContextFactory<MkddDbContext> DbFactory
+@inject MkddHistoricalRankingSelectionService SelectionService
+@inject MkddHistoricalRankingService RankingService
 
 <PageTitle>Classements - MKDD Tracker</PageTitle>
 
-<h1>Classements</h1>
+<h1>Classements historiques</h1>
 
 <div class="card mb-4">
     <div class="card-body">
         <div class="row g-3">
-
             <div class="col-md-6">
                 <label class="form-label">Circuit</label>
                 <select class="form-select"
-                        value="@selectedCourseId"
-                        @onchange="OnCourseChanged">
-                    @foreach (var course in courses)
+                        @bind="selectedCourse"
+                        @bind:after="OnCriteriaChangedAsync">
+                    @foreach (string course in courses)
                     {
-                        <option value="@course.Id">
-                            @course.Name
-                        </option>
+                        <option value="@course">@course</option>
                     }
                 </select>
             </div>
 
             <div class="col-md-6">
-                <label class="form-label">Date du snapshot</label>
+                <label class="form-label">Date du classement</label>
+                <InputDate class="form-control"
+                           @bind-Value="selectedDate"
+                           @bind-Value:after="OnDateChanged" />
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Type</label>
                 <select class="form-select"
-                        @bind="selectedSnapshotId"
-                        @bind:after="LoadPerformancesAsync">
-                    @foreach (var snapshot in snapshots)
-                    {
-                        <option value="@snapshot.Id">
-                            @snapshot.RankingDate.ToString("dd/MM/yyyy")
-                        </option>
-                    }
+                        @bind="selectedTimeType"
+                        @bind:after="OnCriteriaChangedAsync">
+                    <option value="ThreeLap">ThreeLap</option>
+                    <option value="Flap">Flap</option>
+                </select>
+            </div>
+
+            <div class="col-md-6">
+                <label class="form-label">Fréquence</label>
+                <select class="form-select"
+                        @bind="selectedFrequency"
+                        @bind:after="OnCriteriaChangedAsync">
+                    <option value="@HistoricalFrequencyFilter.Hz50">50 Hz</option>
+                    <option value="@HistoricalFrequencyFilter.Hz60">60 Hz</option>
+                    <option value="@HistoricalFrequencyFilter.Unknown">Inconnue</option>
                 </select>
             </div>
 
@@ -50,6 +62,13 @@
                        placeholder="Nom du joueur..." />
             </div>
 
+            <div class="col-12">
+                <button class="btn btn-primary"
+                        @onclick="ShowRankingAsync"
+                        disabled="@(loading || !HasAvailableDates || string.IsNullOrWhiteSpace(selectedCourse))">
+                    @(loading ? "Chargement..." : "Afficher le classement")
+                </button>
+            </div>
         </div>
     </div>
 </div>
@@ -60,81 +79,144 @@
 }
 else if (loading)
 {
-    <p>Chargement du classement...</p>
+    <p>Chargement du classement historique...</p>
+}
+else if (courses.Count == 0)
+{
+    <div class="alert alert-info">Aucun circuit ne possède de performances historiques.</div>
+}
+else if (!HasAvailableDates)
+{
+    <div class="alert alert-info">Aucune performance historique n'est disponible pour ce circuit, ce type et cette fréquence.</div>
+}
+else if (rankingRequested && ranking is null)
+{
+    <div class="alert alert-info">Aucun joueur n'avait de performance connue à la fin de la journée sélectionnée.</div>
+}
+else if (ranking is not null)
+{
+    <div class="alert alert-secondary">
+        <div><strong>Joueurs classés :</strong> @ranking.Entries.Count</div>
+        <div><strong>Circuit :</strong> @ranking.CourseName</div>
+        <div><strong>Date demandée :</strong> @selectedDate.ToString("dd/MM/yyyy")</div>
+        <div><strong>Type :</strong> @ranking.TimeType</div>
+        <div><strong>Fréquence :</strong> @FrequencyLabel</div>
+        <div><strong>Premier PR disponible :</strong> @FormatDate(availableDateRange!.FirstSeenAt)</div>
+        <div><strong>Dernier PR disponible :</strong> @FormatDate(availableDateRange!.LastSeenAt)</div>
+    </div>
+
+    <p class="text-muted">
+        Le classement est reconstruit à partir du dernier PR connu de chaque joueur à la date sélectionnée.
+        Les dates correspondent aux premières observations connues dans les sources historiques.
+    </p>
+
+    @if (availableDateRange!.Count == 1)
+    {
+        <div class="alert alert-info">Une seule performance historique est disponible pour ces critères.</div>
+    }
+
+    @if (!FilteredEntries.Any())
+    {
+        <div class="alert alert-info">Aucun joueur ne correspond à cette recherche.</div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover">
+                <thead>
+                    <tr>
+                        <th>Rang</th>
+                        <th>Joueur</th>
+                        <th>Chrono</th>
+                        <th>Pays</th>
+                        <th>Date du PR connu</th>
+                        <th>Source / rattachement</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (MkddHistoricalRankingEntry entry in FilteredEntries)
+                    {
+                        <tr>
+                            <td>#@entry.Rank</td>
+                            <td>
+                                @if (entry.PlayerId is not null)
+                                {
+                                    <a href="@GetPlayerUrl(entry.PlayerName)" class="text-decoration-none fw-semibold">
+                                        @entry.PlayerName
+                                    </a>
+                                }
+                                else
+                                {
+                                    <span class="fw-semibold">@entry.PlayerName</span>
+                                }
+                            </td>
+                            <td>@FormatRaceTime(entry.Time)</td>
+                            <td>@(entry.Country ?? "—")</td>
+                            <td>@FormatDate(entry.FirstSeenAt)</td>
+                            <td>
+                                @if (entry.PlayerId is not null)
+                                {
+                                    <span class="badge text-bg-primary">Joueur MKDDTracker</span>
+                                    <small class="d-block text-muted">@entry.ExternalName</small>
+                                }
+                                else
+                                {
+                                    <span class="badge text-bg-secondary">Alias historique</span>
+                                    <small class="d-block text-muted">@entry.ExternalName</small>
+                                }
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+    }
 }
 else
 {
-    <p>
-        <strong>@FilteredPerformances.Count()</strong>
-        performance(s) affichée(s)
-    </p>
-
-    <table class="table table-striped table-hover">
-        <thead>
-            <tr>
-                <th>Rang</th>
-                <th>Joueur</th>
-                <th>Chrono</th>
-                <th>Pays</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var performance in FilteredPerformances)
-            {
-                <tr>
-                    <td>#@performance.Rank</td>
-
-                    <td>
-                        <a href="@GetPlayerUrl(performance.PlayerName)"
-                           class="text-decoration-none fw-semibold">
-                            @performance.PlayerName
-                        </a>
-                    </td>
-
-                    <td>@FormatRaceTime(performance.Time)</td>
-                    <td>@(performance.Country ?? "—")</td>
-                </tr>
-            }
-        </tbody>
-    </table>
+    <div class="alert alert-info">Sélectionnez les critères puis affichez le classement historique.</div>
 }
 
 @code {
-    private List<CourseOption> courses = [];
-    private List<SnapshotOption> snapshots = [];
-    private List<PerformanceRow> performances = [];
-
-    private int selectedCourseId;
-    private int selectedSnapshotId;
-
+    private List<string> courses = [];
+    private string selectedCourse = "";
+    private string selectedTimeType = "ThreeLap";
+    private HistoricalFrequencyFilter selectedFrequency = HistoricalFrequencyFilter.Hz60;
+    private DateTime selectedDate = DateTime.Today;
+    private HistoricalPerformanceDateRange? availableDateRange;
+    private MkddHistoricalRanking? ranking;
     private string searchText = "";
     private string? errorMessage;
-    private bool loading = true;
+    private bool loading;
+    private bool rankingRequested;
 
-    private IEnumerable<PerformanceRow> FilteredPerformances =>
-        performances.Where(x =>
+    private bool HasAvailableDates =>
+        availableDateRange?.FirstSeenAt is not null &&
+        availableDateRange.LastSeenAt is not null;
+
+    private string FrequencyLabel => selectedFrequency switch
+    {
+        HistoricalFrequencyFilter.Hz50 => "50 Hz",
+        HistoricalFrequencyFilter.Hz60 => "60 Hz",
+        HistoricalFrequencyFilter.Unknown => "Inconnue",
+        _ => "Inconnue"
+    };
+
+    private IEnumerable<MkddHistoricalRankingEntry> FilteredEntries =>
+        ranking?.Entries.Where(entry =>
             string.IsNullOrWhiteSpace(searchText) ||
-            x.PlayerName.Contains(
-                searchText,
-                StringComparison.OrdinalIgnoreCase));
+            entry.PlayerName.Contains(searchText, StringComparison.OrdinalIgnoreCase))
+        ?? [];
 
     protected override async Task OnInitializedAsync()
     {
+        loading = true;
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-
-            courses = await db.Courses
-                .AsNoTracking()
-                .OrderBy(x => x.Name)
-                .Select(x => new CourseOption(x.Id, x.Name))
-                .ToListAsync();
-
-            if (courses.Count > 0)
-            {
-                selectedCourseId = courses[0].Id;
-                await LoadSnapshotsAsync();
-            }
+            courses = await SelectionService.GetCoursesAsync();
+            selectedCourse = courses.FirstOrDefault() ?? "";
+            if (!string.IsNullOrWhiteSpace(selectedCourse))
+                await LoadDateRangeAsync();
         }
         catch (Exception ex)
         {
@@ -146,93 +228,88 @@ else
         }
     }
 
-    private static string GetPlayerUrl(string playerName)
+    private async Task OnCriteriaChangedAsync()
     {
-        return $"/joueurs?player={Uri.EscapeDataString(playerName)}";
-    }
-
-    private async Task OnCourseChanged(ChangeEventArgs e)
-    {
-        if (int.TryParse(e.Value?.ToString(), out var id))
-        {
-            selectedCourseId = id;
-            await LoadSnapshotsAsync();
-        }
-    }
-
-    private async Task LoadSnapshotsAsync()
-    {
+        ranking = null;
+        rankingRequested = false;
         errorMessage = null;
-        snapshots = [];
-        performances = [];
-        selectedSnapshotId = 0;
-
+        loading = true;
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-
-            snapshots = await db.Snapshots
-                .AsNoTracking()
-                .Where(x => x.CourseId == selectedCourseId)
-                .OrderByDescending(x => x.RankingDate)
-                .Select(x => new SnapshotOption(
-                    x.Id,
-                    x.RankingDate))
-                .ToListAsync();
-
-            if (snapshots.Count > 0)
-            {
-                selectedSnapshotId = snapshots[0].Id;
-                await LoadPerformancesAsync();
-            }
+            await LoadDateRangeAsync();
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
         }
+        finally
+        {
+            loading = false;
+        }
     }
 
-    private async Task LoadPerformancesAsync()
+    private void OnDateChanged()
     {
+        ranking = null;
+        rankingRequested = false;
         errorMessage = null;
-        performances = [];
+    }
 
-        if (selectedSnapshotId == 0)
+    private async Task LoadDateRangeAsync()
+    {
+        availableDateRange = null;
+        if (string.IsNullOrWhiteSpace(selectedCourse))
             return;
 
+        availableDateRange = await SelectionService.GetDateRangeAsync(
+            selectedCourse,
+            selectedTimeType,
+            selectedFrequency);
+
+        if (availableDateRange.LastSeenAt is DateTimeOffset latest)
+            selectedDate = latest.ToUniversalTime().Date;
+    }
+
+    private async Task ShowRankingAsync()
+    {
+        ranking = null;
+        rankingRequested = true;
+        errorMessage = null;
+
+        if (!HasAvailableDates || string.IsNullOrWhiteSpace(selectedCourse))
+            return;
+
+        loading = true;
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
+            DateTimeOffset rankingAt = new(
+                selectedDate.Date.AddDays(1).AddTicks(-1),
+                TimeSpan.Zero);
 
-            performances = await db.Performances
-                .AsNoTracking()
-                .Where(x => x.SnapshotId == selectedSnapshotId)
-                .OrderBy(x => x.Rank)
-                .Select(x => new PerformanceRow(
-                    x.Rank,
-                    x.Player.Name,
-                    x.Time,
-                    x.Player.Country))
-                .ToListAsync();
+            ranking = await RankingService.GetRankingAtAsync(
+                selectedCourse,
+                selectedTimeType,
+                selectedFrequency,
+                rankingAt);
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
         }
+        finally
+        {
+            loading = false;
+        }
     }
 
-    private static string FormatRaceTime(TimeSpan time)
-    {
-        return $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
-    }
+    private static string GetPlayerUrl(string playerName) =>
+        $"/joueurs?player={Uri.EscapeDataString(playerName)}";
 
-    private sealed record CourseOption(int Id, string Name);
+    private static string FormatRaceTime(TimeSpan time) =>
+        $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
 
-    private sealed record SnapshotOption(int Id, DateOnly RankingDate);
-
-    private sealed record PerformanceRow(
-        int Rank,
-        string PlayerName,
-        TimeSpan Time,
-        string? Country);
+    private static string FormatDate(DateTimeOffset? date) =>
+        date is null
+            ? "—"
+            : date.Value.ToUniversalTime().ToString("dd/MM/yyyy");
 }
