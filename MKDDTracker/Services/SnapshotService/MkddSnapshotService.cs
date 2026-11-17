@@ -3,6 +3,7 @@ using MKDDTracker.Scraper.Data;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Data.Entities;
 using MKDDTracker.Scraper.Models;
+using MKDDTracker.Scraper.Services.Ranking;
 
 namespace MKDDTracker.Scraper.Services.SnapshotService;
 
@@ -56,8 +57,15 @@ public sealed class MkddSnapshotService
         _db.Snapshots.Add(snapshot);
 
 
-        foreach (var performance in performances)
+        var rankedPerformances =
+            MkddRankingCalculator.CalculateRanks(
+                performances,
+                x => x.Time);
+
+        foreach (var rankedPerformance in rankedPerformances)
         {
+            var performance = rankedPerformance.Item;
+
             var player = await _db.Players
                 .SingleOrDefaultAsync(
                     x => x.SitePlayerId == performance.SitePlayerId);
@@ -84,7 +92,7 @@ public sealed class MkddSnapshotService
                 new MkddPerformanceEntity
                 {
                     Player = player,
-                    Rank = performance.Rank,
+                    Rank = rankedPerformance.Rank,
                     Time = performance.Time,
                     Standard = performance.Standard,
                     RecordDate = performance.RecordDate,

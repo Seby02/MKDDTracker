@@ -361,3 +361,21 @@ MigrationBackup/
 
 # Fody - auto-generated XML schema
 FodyWeavers.xsd
+/MKDDTracker-PR3
+/MKDDTracker-PR4
+/.gitignore
+/.gitignore
+
+# MKDDTracker local SQLite databases and migration artifacts
+*.db
+*.db-wal
+*.db-shm
+*.db-journal
+*.backup-*.db
+mkddtracker-design.db*
+/MKDDTracker-PR5
+
+# Historical import datasets
+imports/
+/MKDDTracker/mkdd-model-for-import.txt
+/MKDDTracker/historical-import-migration.sql

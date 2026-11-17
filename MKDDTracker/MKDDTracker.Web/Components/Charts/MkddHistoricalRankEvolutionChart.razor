@@ -1,0 +1,140 @@
+@using System.Globalization
+@using MKDDTracker.Scraper.Models.Evolution
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h4>Évolution historique du rang</h4>
+        <p class="text-muted">Date en abscisse · Rang en ordonnée (le rang #1 est en haut)</p>
+
+        @if (ChartPoints.Count < 2)
+        {
+            <p class="text-muted mb-0">Pas assez de points pour tracer une évolution du rang.</p>
+        }
+        else
+        {
+            <div style="width:100%; overflow-x:auto;">
+                <div style="position:relative; width:100%; min-width:600px; aspect-ratio:800/350;">
+                    <svg viewBox="0 0 800 350"
+                         preserveAspectRatio="none"
+                         style="position:absolute; inset:0; width:100%; height:100%;"
+                         role="img"
+                         aria-label="Évolution historique du rang, le rang numéro un est placé en haut">
+                        @foreach (int tick in RankTicks)
+                        {
+                            <line x1="65" y1="@GetY(tick)" x2="765" y2="@GetY(tick)"
+                                  stroke="#e5e7eb" stroke-dasharray="4 4" />
+                        }
+
+                        <polyline points="@PolylinePoints" fill="none" stroke="#2563eb" stroke-width="3"
+                                  stroke-linejoin="round" stroke-linecap="round" />
+
+                        @foreach (ChartPoint point in ChartPoints)
+                        {
+                            <circle cx="@GetX(point.Index)" cy="@GetY(point.Rank)" r="6"
+                                    fill="#2563eb" stroke="white" stroke-width="2" />
+                        }
+                    </svg>
+
+                    @foreach (int tick in RankTicks)
+                    {
+                        <span class="historical-rank-axis-label"
+                              style="@LabelStyle(55, GetY(tick), "translate(-100%, -50%)")">
+                            #@tick
+                        </span>
+                    }
+
+                    @foreach (ChartPoint point in ChartPoints)
+                    {
+                        <span class="historical-rank-point-label"
+                              style="@LabelStyle(GetX(point.Index), GetY(point.Rank) - 16, "translate(-50%, -100%)")">
+                            #@point.Rank
+                        </span>
+                        <span class="historical-rank-axis-label"
+                              style="@LabelStyle(GetX(point.Index), 322, "translate(-50%, -50%)")">
+                            @point.Date.ToString("dd/MM/yy")
+                        </span>
+                    }
+                </div>
+            </div>
+            <p class="text-muted mt-2 mb-0">Les rangs sont ceux reconstruits par le service historique ; aucun rang absent n'est interpolé.</p>
+        }
+    </div>
+</div>
+
+<style>
+    .historical-rank-axis-label {
+        position: absolute;
+        color: #6b7280;
+        font-size: 12px;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+
+    .historical-rank-point-label {
+        position: absolute;
+        color: #1d4ed8;
+        font-size: 12px;
+        font-weight: bold;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<MkddHistoricalPlayerTimelinePoint> Points { get; set; } = [];
+
+    private const double Left = 65;
+    private const double Right = 765;
+    private const double Top = 45;
+    private const double Bottom = 285;
+
+    private List<ChartPoint> ChartPoints => Points
+        .Select((point, index) => new ChartPoint(index, point.Date, point.Rank))
+        .ToList();
+
+    private int MinRank => ChartPoints.Min(point => point.Rank);
+
+    private int MaxRank => ChartPoints.Max(point => point.Rank);
+
+    private List<int> RankTicks
+    {
+        get
+        {
+            if (ChartPoints.Count == 0)
+                return [];
+            if (MinRank == MaxRank)
+                return [MinRank];
+
+            int range = MaxRank - MinRank;
+            int step = Math.Max(1, (int)Math.Ceiling(range / 4.0));
+            var ticks = new List<int>();
+            for (int rank = MinRank; rank <= MaxRank; rank += step)
+                ticks.Add(rank);
+            if (!ticks.Contains(MaxRank))
+                ticks.Add(MaxRank);
+            return ticks;
+        }
+    }
+
+    private double GetX(int index) => ChartPoints.Count <= 1
+        ? Left
+        : Left + index * (Right - Left) / (ChartPoints.Count - 1);
+
+    private double GetY(int rank) => MinRank == MaxRank
+        ? (Top + Bottom) / 2
+        : Top + (MaxRank - rank) * (Bottom - Top) / (double)(MaxRank - MinRank);
+
+    private string PolylinePoints => string.Join(" ", ChartPoints.Select(point =>
+        $"{GetX(point.Index).ToString(CultureInfo.InvariantCulture)}," +
+        GetY(point.Rank).ToString(CultureInfo.InvariantCulture)));
+
+    private static string LabelStyle(double x, double y, string transform)
+    {
+        string left = (x / 800 * 100).ToString(CultureInfo.InvariantCulture);
+        string top = (y / 350 * 100).ToString(CultureInfo.InvariantCulture);
+        return $"position:absolute; left:{left}%; top:{top}%; transform:{transform};";
+    }
+
+    private sealed record ChartPoint(int Index, DateTimeOffset Date, int Rank);
+}

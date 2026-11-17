@@ -1,14 +1,16 @@
-﻿using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+﻿namespace MKDDTracker.Scraper.Models.Evolution;
 
-namespace MKDDTracker.Scraper.Models.Evolution;
-
+/// <summary>
+/// Describes how another player changed position relative to the target player
+/// between two snapshots.
+/// </summary>
 public enum MkddMovementRelation
 {
     NoDirectCrossing,
     TargetPassedPlayer,
-    PlayerPassedTarget
+    PlayerPassedTarget,
+    TieCreated,
+    TieBroken,
+    NewEntry,
+    PlayerRemoved
 }
