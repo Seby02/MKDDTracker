@@ -21,14 +21,51 @@ public sealed class MkddHistoricalPlayerTimelineService
         _rankingDateRequested = rankingDateRequested;
     }
 
-    public async Task<MkddHistoricalPlayerTimeline?> GetTimelineAsync(
+    public Task<MkddHistoricalPlayerTimeline?> GetTimelineAsync(
         HistoricalPlayerOption player,
         string courseName,
         string timeType,
         HistoricalFrequencyFilter frequencyFilter,
         DateTimeOffset startDate,
         DateTimeOffset endDate,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        GetTimelineCoreAsync(
+            player,
+            courseName,
+            timeType,
+            frequencyFilter,
+            startDate,
+            endDate,
+            preserveFrequencyCategories: false,
+            cancellationToken);
+
+    public Task<MkddHistoricalPlayerTimeline?> GetTimelineForProfileAsync(
+        HistoricalPlayerOption player,
+        string courseName,
+        string timeType,
+        HistoricalFrequencyFilter frequencyFilter,
+        DateTimeOffset startDate,
+        DateTimeOffset endDate,
+        CancellationToken cancellationToken = default) =>
+        GetTimelineCoreAsync(
+            player,
+            courseName,
+            timeType,
+            frequencyFilter,
+            startDate,
+            endDate,
+            preserveFrequencyCategories: true,
+            cancellationToken);
+
+    private async Task<MkddHistoricalPlayerTimeline?> GetTimelineCoreAsync(
+        HistoricalPlayerOption player,
+        string courseName,
+        string timeType,
+        HistoricalFrequencyFilter frequencyFilter,
+        DateTimeOffset startDate,
+        DateTimeOffset endDate,
+        bool preserveFrequencyCategories,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(player);
 
@@ -92,7 +129,7 @@ public sealed class MkddHistoricalPlayerTimelineService
                 performance.TimeType,
                 performance.Time,
                 DateOnly.FromDateTime(performance.FirstSeenAt.UtcDateTime)))
-            .Select(group => Consolidate(group))
+            .SelectMany(group => ConsolidateForProfile(group, preserveFrequencyCategories))
             .Where(item => MatchesFrequencyFilter(item.Preferred.Frequency, frequencyFilter))
             .OrderBy(item => item.Preferred.FirstSeenAt.ToUniversalTime())
             .ThenBy(item => item.Preferred.SequenceNumber)
@@ -171,6 +208,25 @@ public sealed class MkddHistoricalPlayerTimelineService
                 EndDate = normalizedEndDate,
                 Points = points
             };
+    }
+
+    private static IEnumerable<ConsolidatedPerformance> ConsolidateForProfile(
+        IEnumerable<TimelinePerformance> performances,
+        bool preserveFrequencyCategories)
+    {
+        List<TimelinePerformance> group = performances.ToList();
+        int knownFrequencyCount = group
+            .Where(performance => performance.Frequency.HasValue)
+            .Select(performance => performance.Frequency)
+            .Distinct()
+            .Count();
+
+        if (!preserveFrequencyCategories || knownFrequencyCount <= 1)
+            return [Consolidate(group)];
+
+        return group
+            .GroupBy(performance => performance.Frequency)
+            .Select(frequencyGroup => Consolidate(frequencyGroup));
     }
 
     private static bool MatchesFrequencyFilter(

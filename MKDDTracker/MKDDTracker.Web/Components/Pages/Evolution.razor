@@ -204,6 +204,12 @@ else
     [SupplyParameterFromQuery(Name = "course")]
     private string? CourseFromQuery { get; set; }
 
+    [SupplyParameterFromQuery(Name = "type")]
+    private string? TimeTypeFromQuery { get; set; }
+
+    [SupplyParameterFromQuery(Name = "frequency")]
+    private string? FrequencyFromQuery { get; set; }
+
     private HistoricalPlayerOption? selectedPlayer =>
         players.FirstOrDefault(player => player.Key == selectedPlayerKey);
 
@@ -225,6 +231,8 @@ else
             selectedCourse = courses.Contains(CourseFromQuery ?? "")
                 ? CourseFromQuery!
                 : courses.FirstOrDefault() ?? "";
+            selectedTimeType = ResolveTimeType(TimeTypeFromQuery) ?? selectedTimeType;
+            selectedFrequency = ResolveFrequency(FrequencyFromQuery) ?? selectedFrequency;
             await LoadAvailableDatesAsync();
             if (availableHistoricalCount >= 2)
                 await AnalyzeAsync();
@@ -244,6 +252,19 @@ else
             string.Equals(player.Key, value, StringComparison.OrdinalIgnoreCase) ||
             string.Equals(player.DisplayName, value, StringComparison.OrdinalIgnoreCase))?.Key;
     }
+
+    private static string? ResolveTimeType(string? value) =>
+        string.Equals(value, "ThreeLap", StringComparison.OrdinalIgnoreCase)
+            ? "ThreeLap"
+            : string.Equals(value, "Flap", StringComparison.OrdinalIgnoreCase)
+                ? "Flap"
+                : null;
+
+    private static HistoricalFrequencyFilter? ResolveFrequency(string? value) =>
+        Enum.TryParse(value, ignoreCase: true, out HistoricalFrequencyFilter frequency) &&
+        frequency is HistoricalFrequencyFilter.Hz50 or HistoricalFrequencyFilter.Hz60 or HistoricalFrequencyFilter.Unknown
+            ? frequency
+            : null;
 
     private async Task OnCriteriaChangedAsync()
     {

@@ -31,6 +31,7 @@ builder.Services.AddScoped<MkddHistoricalRankingService>();
   builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
   builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();
   builder.Services.AddScoped<MkddHistoricalPlayerTimelineService>();
+builder.Services.AddScoped<MkddHistoricalPlayerProfileService>();
 
 var app = builder.Build();
 
