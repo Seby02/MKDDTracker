@@ -1,7 +1,5 @@
 using MKDDTracker.Scraper.Models.Evolution;
 
-using MKDDTracker.Scraper.Models.Evolution;
-
 namespace MKDDTracker.Scraper.Services.EvolutionService;
 
 public sealed class MkddHistoricalRankingComparisonService

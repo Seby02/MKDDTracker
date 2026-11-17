@@ -7,6 +7,39 @@ using MKDDTracker.Scraper.Services.SnapshotService;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using MKDDTracker.Scraper.Services.HistoricalImport;
+using System.Globalization;
+
+int diagnosticIndex = Array.FindIndex(
+    args,
+    argument => string.Equals(
+        argument,
+        "--diagnose-modern-history",
+        StringComparison.OrdinalIgnoreCase));
+
+if (diagnosticIndex >= 0)
+{
+    string diagnosticPlayerName = string.Join(
+        " ",
+        args.Skip(diagnosticIndex + 1));
+    await DiagnoseModernHistoryAsync(diagnosticPlayerName);
+    return;
+}
+
+if (args.Contains(
+    "--dry-run-snapshot-history-migration",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await RunSnapshotHistoryMigrationAsync(dryRun: true);
+    return;
+}
+
+if (args.Contains(
+    "--migrate-snapshot-history",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await RunSnapshotHistoryMigrationAsync(dryRun: false);
+    return;
+}
 
 if (args.Contains(
     "--analyze-historical-import",
@@ -15,6 +48,197 @@ if (args.Contains(
     await AnalyzeHistoricalImportAsync();
     return;
 }
+
+static async Task RunSnapshotHistoryMigrationAsync(bool dryRun)
+{
+    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
+    if (!File.Exists(databasePath))
+    {
+        Console.WriteLine($"Base introuvable : {databasePath}");
+        return;
+    }
+
+    var options = new DbContextOptionsBuilder<MkddDbContext>()
+        .UseSqlite($"Data Source={databasePath}")
+        .Options;
+    await using var db = new MkddDbContext(options);
+    var service = new MkddSnapshotHistoryMigrationService(db);
+
+    if (dryRun)
+    {
+        Console.WriteLine("=== DRY-RUN MIGRATION SNAPSHOTS VERS HISTORIQUE ===");
+        PrintSnapshotMigrationResult(await service.AnalyzeAsync());
+        return;
+    }
+
+    Console.WriteLine("=== MIGRATION SNAPSHOTS VERS HISTORIQUE ===");
+    Console.WriteLine("Cette commande écrit dans la base réelle.");
+    Console.WriteLine("Tape MIGRER pour continuer :");
+    if (!string.Equals(Console.ReadLine(), "MIGRER", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Migration annulée.");
+        return;
+    }
+
+    Action<MkddSnapshotHistoryMigrationProgress> progress = status =>
+        Console.WriteLine(
+            $"Progression : {status.ImportedEvents:N0}/{status.TotalEvents:N0} événements " +
+            $"({status.ProcessedSeries:N0}/{status.TotalSeries:N0} séries)");
+    MkddSnapshotHistoryMigrationResult result = await service.ImportAsync(progress);
+    PrintSnapshotMigrationResult(result);
+    Console.WriteLine($"Événements importés : {result.PrEventsImported:N0}");
+}
+
+static void PrintSnapshotMigrationResult(MkddSnapshotHistoryMigrationResult result)
+{
+    Console.WriteLine();
+    Console.WriteLine($"Performances snapshot analysées : {result.SnapshotPerformancesAnalyzed:N0}");
+    Console.WriteLine($"Première RecordDate : {FormatMigrationDate(result.EarliestRecordDate)}");
+    Console.WriteLine($"Dernière RecordDate : {FormatMigrationDate(result.LatestRecordDate)}");
+    Console.WriteLine($"Première RankingDate : {FormatMigrationDate(result.EarliestRankingDate)}");
+    Console.WriteLine($"Dernière RankingDate : {FormatMigrationDate(result.LatestRankingDate)}");
+    Console.WriteLine($"Séries joueur/circuit analysées : {result.PlayerCourseSeriesAnalyzed:N0}");
+    Console.WriteLine($"Alias modernes existants : {result.ExistingModernAliases:N0}");
+    Console.WriteLine($"Alias modernes à créer : {result.ModernAliasesToCreate:N0}");
+    Console.WriteLine($"Événements PR existants : {result.ExistingPrEvents:N0}");
+    Console.WriteLine($"Événements PR à créer : {result.PrEventsToCreate:N0}");
+    Console.WriteLine($"Snapshots identiques ignorés : {result.IdenticalSnapshotsIgnored:N0}");
+    Console.WriteLine($"Chronos moins bons ignorés : {result.SlowerTimesIgnored:N0}");
+}
+
+static string FormatMigrationDate(DateOnly? date) =>
+    date?.ToString("dd/MM/yyyy") ?? "aucune";
+
+static async Task DiagnoseModernHistoryAsync(string requestedPlayerName)
+{
+    if (string.IsNullOrWhiteSpace(requestedPlayerName))
+    {
+        Console.WriteLine("Usage : --diagnose-modern-history \"Nom du joueur\"");
+        return;
+    }
+
+    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
+    if (!File.Exists(databasePath))
+    {
+        Console.WriteLine($"Base introuvable : {databasePath}");
+        return;
+    }
+
+    var options = new DbContextOptionsBuilder<MkddDbContext>()
+        .UseSqlite($"Data Source={databasePath}")
+        .Options;
+    await using var db = new MkddDbContext(options);
+
+    var players = await db.Players
+        .AsNoTracking()
+        .Select(player => new { player.Id, player.Name })
+        .ToListAsync();
+    var player = players.FirstOrDefault(candidate =>
+        string.Equals(
+            candidate.Name,
+            requestedPlayerName,
+            StringComparison.OrdinalIgnoreCase));
+
+    if (player is null)
+    {
+        Console.WriteLine($"Joueur moderne introuvable : {requestedPlayerName}");
+        return;
+    }
+
+    var snapshotPerformances = await db.Performances
+        .AsNoTracking()
+        .Where(performance => performance.PlayerId == player.Id)
+        .Select(performance => new
+        {
+            Course = performance.Snapshot.Course.Name,
+            performance.Time,
+            performance.RecordDate,
+            RankingDate = performance.Snapshot.RankingDate
+        })
+        .OrderBy(performance => performance.Course)
+        .ThenBy(performance => performance.RankingDate)
+        .ToListAsync();
+
+    var historicalPerformances = await db.HistoricalPerformances
+        .AsNoTracking()
+        .Where(performance =>
+            performance.HistoricalPlayerAlias.PlayerId == player.Id)
+        .Select(performance => new
+        {
+            Course = performance.Course.Name,
+            performance.Time,
+            performance.FirstSeenAt,
+            performance.TimeType,
+            performance.Frequency,
+            performance.SourceSystem,
+            performance.ExternalKey
+        })
+        .ToListAsync();
+
+    historicalPerformances = historicalPerformances
+        .OrderBy(performance => performance.Course)
+        .ThenBy(performance => performance.FirstSeenAt)
+        .ToList();
+
+    var modernHistory = historicalPerformances
+        .Where(performance => string.Equals(
+            performance.SourceSystem,
+            "MKDDTracker",
+            StringComparison.OrdinalIgnoreCase))
+        .ToList();
+
+    Console.WriteLine($"=== DIAGNOSTIC HISTORIQUE MODERNE : {player.Name} ===");
+    Console.WriteLine("Mode lecture seule : aucune donnée n'est modifiée.");
+    Console.WriteLine();
+    Console.WriteLine("Performances source Snapshots/Performances");
+    Console.WriteLine("Circuit | Chrono | RecordDate | RankingDate");
+    foreach (var performance in snapshotPerformances)
+    {
+        Console.WriteLine(
+            $"{performance.Course} | {FormatDiagnosticTime(performance.Time)} | " +
+            $"{performance.RecordDate:dd/MM/yyyy} | {performance.RankingDate:dd/MM/yyyy}");
+    }
+
+    Console.WriteLine();
+    Console.WriteLine("HistoricalPerformances correspondantes");
+    Console.WriteLine("Circuit | Chrono | FirstSeenAt | TimeType | Frequency | SourceSystem | ExternalKey");
+    foreach (var performance in historicalPerformances)
+    {
+        Console.WriteLine(
+            $"{performance.Course} | {FormatDiagnosticTime(performance.Time)} | " +
+            $"{performance.FirstSeenAt.ToString("O", CultureInfo.InvariantCulture)} | " +
+            $"{performance.TimeType} | {performance.Frequency?.ToString(CultureInfo.InvariantCulture) ?? "null"} | " +
+            $"{performance.SourceSystem} | {performance.ExternalKey}");
+    }
+
+    DateTimeOffset? earliestFirstSeenAt = historicalPerformances.Count == 0
+        ? null
+        : historicalPerformances.Min(performance => performance.FirstSeenAt);
+    DateTimeOffset? latestFirstSeenAt = historicalPerformances.Count == 0
+        ? null
+        : historicalPerformances.Max(performance => performance.FirstSeenAt);
+    DateOnly? earliestRecordDate = snapshotPerformances.Count == 0
+        ? null
+        : snapshotPerformances.Min(performance => performance.RecordDate);
+    DateOnly? latestRecordDate = snapshotPerformances.Count == 0
+        ? null
+        : snapshotPerformances.Max(performance => performance.RecordDate);
+
+    Console.WriteLine();
+    Console.WriteLine($"RecordDate min/max : {FormatDiagnosticDate(earliestRecordDate)} / {FormatDiagnosticDate(latestRecordDate)}");
+    Console.WriteLine($"FirstSeenAt min/max : {FormatDiagnosticDateTime(earliestFirstSeenAt)} / {FormatDiagnosticDateTime(latestFirstSeenAt)}");
+    Console.WriteLine($"Nombre de performances snapshot : {snapshotPerformances.Count:N0}");
+    Console.WriteLine($"Nombre d'événements historiques SourceSystem = MKDDTracker : {modernHistory.Count:N0}");
+}
+
+static string FormatDiagnosticTime(TimeSpan time) =>
+    time.ToString(@"m\:ss\.fff", CultureInfo.InvariantCulture);
+
+static string FormatDiagnosticDate(DateOnly? date) =>
+    date?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "aucune";
+
+static string FormatDiagnosticDateTime(DateTimeOffset? date) =>
+    date?.ToString("O", CultureInfo.InvariantCulture) ?? "aucune";
 
 if (args.Contains(
     "--dry-run-historical-import",

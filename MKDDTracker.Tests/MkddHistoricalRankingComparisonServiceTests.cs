@@ -41,7 +41,8 @@ public sealed class MkddHistoricalRankingComparisonServiceTests
                 initialDate, finalDate);
 
             MkddHistoricalRankingComparisonEntry player = Assert.Single(
-                result.Entries.Where(entry => entry.PlayerName == "Player One"));
+                result.Entries,
+                entry => entry.PlayerName == "Player One");
             Assert.Equal(MkddHistoricalRankingComparisonStatus.Compared, player.Status);
             Assert.Equal(2, player.InitialRank);
             Assert.Equal(1, player.FinalRank);
@@ -84,7 +85,8 @@ public sealed class MkddHistoricalRankingComparisonServiceTests
                 initialDate, finalDate);
 
             MkddHistoricalRankingComparisonEntry entry = Assert.Single(
-                result.Entries.Where(item => item.PlayerName == "New Player"));
+                result.Entries,
+                item => item.PlayerName == "New Player");
             Assert.Equal(MkddHistoricalRankingComparisonStatus.NewEntrant, entry.Status);
             Assert.Null(entry.InitialRank);
             Assert.Equal(2, entry.FinalRank);
