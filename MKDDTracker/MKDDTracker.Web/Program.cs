@@ -29,6 +29,7 @@ builder.Services.AddScoped<MkddEvolutionReportService>();
 builder.Services.AddScoped<MkddSnapshotImportService>();
 builder.Services.AddScoped<MkddHistoricalRankingService>();
   builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
+  builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();
 
 var app = builder.Build();
 

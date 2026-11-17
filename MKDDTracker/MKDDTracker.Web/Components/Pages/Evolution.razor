@@ -1,15 +1,13 @@
 ﻿@page "/evolution"
 @rendermode InteractiveServer
 
-@using MKDDTracker.Web.Components.Charts
 @using Microsoft.EntityFrameworkCore
 @using MKDDTracker.Scraper.Data.Database
 @using MKDDTracker.Scraper.Models.Evolution
 @using MKDDTracker.Scraper.Services.EvolutionService
 
-@inject IDbContextFactory<MkddDbContext> DbFactory
-@inject MkddPlayerEvolutionService EvolutionService
-@inject MkddEvolutionReportService ReportService
+@inject MkddHistoricalRankingSelectionService SelectionService
+@inject MkddHistoricalRankingComparisonService ComparisonService
 
 <PageTitle>Évolution - MKDD Tracker</PageTitle>
 
@@ -17,244 +15,125 @@
 
 <div class="card mb-4">
     <div class="card-body">
-        <h4 class="mb-3">Critères d'analyse</h4>
-
+        <h4 class="mb-3">Critères d'analyse historique</h4>
         <div class="row g-3">
             <div class="col-md-6">
                 <label class="form-label">Joueur</label>
-
-                <select class="form-select" @bind="selectedPlayer">
+                <select class="form-select" @bind="selectedPlayerKey" @bind:after="OnCriteriaChangedAsync">
                     @foreach (var player in players)
                     {
-                        <option value="@player">@player</option>
+                        <option value="@player.Key">@player.DisplayName</option>
                     }
                 </select>
             </div>
-
             <div class="col-md-6">
                 <label class="form-label">Circuit</label>
-
-
-                <select class="form-select"
-                        @bind="selectedCourse"
-                        @bind:after="OnCourseChangedAsync">
-
+                <select class="form-select" @bind="selectedCourse" @bind:after="OnCriteriaChangedAsync">
                     @foreach (var course in courses)
                     {
                         <option value="@course">@course</option>
                     }
                 </select>
-
             </div>
-
+            <div class="col-md-6">
+                <label class="form-label">Type de chrono</label>
+                <select class="form-select" @bind="selectedTimeType" @bind:after="OnCriteriaChangedAsync">
+                    <option value="ThreeLap">ThreeLap</option>
+                    <option value="Flap">Flap</option>
+                </select>
+            </div>
+            <div class="col-md-6">
+                <label class="form-label">Fréquence</label>
+                <select class="form-select" @bind="selectedFrequency" @bind:after="OnCriteriaChangedAsync">
+                    <option value="@HistoricalFrequencyFilter.Hz50">50 Hz</option>
+                    <option value="@HistoricalFrequencyFilter.Hz60">60 Hz</option>
+                    <option value="@HistoricalFrequencyFilter.Unknown">Inconnue</option>
+                </select>
+            </div>
             <div class="col-md-6">
                 <label class="form-label">Date de début</label>
-
-                <InputDate class="form-control"
-                           @bind-Value="startDate" />
+                <InputDate class="form-control" @bind-Value="startDate" />
             </div>
-
             <div class="col-md-6">
                 <label class="form-label">Date de fin</label>
-
-                <InputDate class="form-control"
-                           @bind-Value="endDate" />
+                <InputDate class="form-control" @bind-Value="endDate" />
             </div>
-
             <div class="col-12">
-                <button class="btn btn-primary"
-                        @onclick="AnalyzeAsync"
-                        disabled="@(loading || availableSnapshotCount < 2)">
+                <button class="btn btn-primary" @onclick="AnalyzeAsync"
+                        disabled="@(loading || availableHistoricalCount < 2 || !AreDatesValid)">
                     @(loading ? "Analyse en cours..." : "Analyser")
                 </button>
             </div>
-
-
-            <div class="col-12">
-
-                <div class="text-muted mb-2">
-                    <strong>Snapshots disponibles :</strong>
-                    @availableSnapshotCount
-                </div>
-
-                @if (!string.IsNullOrWhiteSpace(snapshotMessage))
-                {
-                    <div class="alert alert-warning mb-0">
-                        @snapshotMessage
-                    </div>
-                }
-
+            <div class="col-12 text-muted">
+                <strong>PR historiques disponibles :</strong> @availableHistoricalCount
+                <div class="small">La date correspond à la première publication connue dans les archives Yahoo ; elle ne représente pas nécessairement la date de réalisation du chrono.</div>
             </div>
-
         </div>
     </div>
 </div>
 
 @if (!string.IsNullOrWhiteSpace(errorMessage))
 {
-    <div class="alert alert-danger">
-        @errorMessage
-    </div>
+    <div class="alert alert-danger">@errorMessage</div>
 }
 else if (loading)
 {
     <p>Chargement de l'évolution...</p>
 }
-else if (report is null)
+else if (comparison is null)
 {
-    <div class="alert alert-info">
-        Aucune évolution disponible pour ces critères.
-        Il faut au moins deux snapshots comparables
-        sur la période sélectionnée.
-    </div>
+    <div class="alert alert-info">Sélectionnez des critères disposant d'au moins deux PR historiques.</div>
 }
 else
 {
-    <h2>@report.PlayerName — @report.CourseName</h2>
+    var entry = selectedEntry;
+    <h2>@(entry?.PlayerName ?? selectedPlayer?.DisplayName ?? "Joueur") — @comparison.CourseName</h2>
 
-    @if (report.Steps.Count > 0)
+    @if (entry is null || entry.Status == MkddHistoricalRankingComparisonStatus.Unavailable)
     {
-        var firstStep = report.Steps[0];
-        var lastStep = report.Steps[^1];
+        <div class="alert alert-warning">Le classement historique n'est pas disponible pour ces critères.</div>
+    }
+    else
+    {
+        @if (entry.Status == MkddHistoricalRankingComparisonStatus.NewEntrant)
+        {
+            <div class="alert alert-info">Ce joueur est un nouveau entrant : il n'apparaît pas dans le classement initial.</div>
+        }
+        else if (entry.Status == MkddHistoricalRankingComparisonStatus.MissingAtEnd)
+        {
+            <div class="alert alert-warning">Ce joueur n'apparaît plus dans le classement final.</div>
+        }
 
         <div class="row g-3 mb-4">
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <h6>Classement actuel</h6>
-                        <h2>#@lastStep.CurrentRank</h2>
-                    </div>
-                </div>
-            </div>
-
-            <div class="col-md-4">
-                <div class="card h-100">
-                    <div class="card-body">
-                        <h6>Progression totale</h6>
-                        <h2>
-                            @FormatPlaces(
-                            firstStep.PreviousRank -
-                            lastStep.CurrentRank)
-                </h2>
-            </div>
+            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Rang initial</h6><h2>@FormatRank(entry.InitialRank)</h2></div></div></div>
+            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Rang final</h6><h2>@FormatRank(entry.FinalRank)</h2></div></div></div>
+            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Progression totale</h6><h2>@FormatPlaces(entry.PlacesGained)</h2></div></div></div>
+            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Chrono final</h6><h2>@FormatRaceTime(entry.FinalTime)</h2></div></div></div>
         </div>
-    </div>
 
-    <div class="col-md-4">
-        <div class="card h-100">
+        <div class="card">
             <div class="card-body">
-                <h6>Chrono actuel</h6>
-                <h2>@FormatRaceTime(lastStep.CurrentTime)</h2>
+                <h5>Détail de la comparaison</h5>
+                <p>Statut : <strong>@entry.Status</strong></p>
+                <p>Rang : <strong>@FormatRank(entry.InitialRank) → @FormatRank(entry.FinalRank)</strong> (@FormatPlaces(entry.PlacesGained))</p>
+                <p>Chrono : <strong>@FormatRaceTime(entry.InitialTime) → @FormatRaceTime(entry.FinalTime)</strong></p>
+                <p>Temps gagné/perdu : <strong>@FormatTimeImprovement(entry.TimeImprovement)</strong></p>
             </div>
         </div>
-    </div>
-</div>
-<MkddRankEvolutionChart Steps="report.Steps" />
-
-<MkddTimeEvolutionChart Steps="report.Steps" />
-
-<h3>Historique des évolutions</h3>
-
-@foreach (var step in report.Steps)
-        {
-            <div class="card mb-3">
-                <div class="card-body">
-                    <h5>
-                        @step.PreviousDate.ToString("dd/MM/yyyy")
-                        →
-                        @step.CurrentDate.ToString("dd/MM/yyyy")
-                    </h5>
-
-                    <p>
-                        Classement :
-                        <strong>
-                            #@step.PreviousRank
-                            →
-                            #@step.CurrentRank
-                        </strong>
-                        (@FormatPlaces(step.TotalPlacesGained))
-                    </p>
-
-                    <p>
-                        Chrono :
-                        <strong>
-                            @FormatRaceTime(step.PreviousTime)
-                            →
-                            @FormatRaceTime(step.CurrentTime)
-                        </strong>
-                    </p>
-
-                    <p>
-                        Progression personnelle :
-                        <strong>
-                            @FormatPlaces(
-                            step.PlacesGainedFromOwnImprovement)
-            </strong>
-        </p>
-
-        <p>
-            Effet des autres joueurs :
-            <strong>
-                @FormatPlaces(
-                                step.PlacesGainedFromOthers)
-            </strong>
-        </p>
-
-        @if (step.RankImpacts.Count > 0)
-                    {
-                        <h6>Impacts des autres joueurs</h6>
-
-                        @foreach (var impact in step.RankImpacts
-                                .OrderBy(x => x.RankImpact)
-                                .ThenBy(x => x.CurrentRank))
-                        {
-                            <div class="alert alert-secondary">
-                                <strong>@impact.PlayerName</strong>
-
-                                <div>
-                                    Rang :
-                                    #@impact.PreviousRank
-                                    →
-                                    #@impact.CurrentRank
-                                </div>
-
-                                <div>
-                                    Chrono :
-                                    @FormatRaceTime(impact.PreviousTime)
-                                    →
-                                    @FormatRaceTime(impact.CurrentTime)
-                                </div>
-
-                                <div>
-                                    Impact :
-                                    <strong>
-                                        @FormatPlaces(impact.RankImpact)
-                                    </strong>
-                                </div>
-                            </div>
-                        }
-                    }
-                </div>
-            </div>
-        }
     }
 }
 
 @code {
-    private List<string> players = [];
+    private List<HistoricalPlayerOption> players = [];
     private List<string> courses = [];
-
-    private string selectedPlayer = "";
+    private string selectedPlayerKey = "";
     private string selectedCourse = "";
-
+    private string selectedTimeType = "ThreeLap";
+    private HistoricalFrequencyFilter selectedFrequency = HistoricalFrequencyFilter.Hz60;
     private DateTime startDate = DateTime.Today;
     private DateTime endDate = DateTime.Today;
-
-    private int availableSnapshotCount;
-    private string? snapshotMessage;
-
-    private MkddPlayerEvolutionReport? report;
-
+    private int availableHistoricalCount;
+    private MkddHistoricalRankingComparison? comparison;
     private bool loading;
     private string? errorMessage;
 
@@ -264,62 +143,30 @@ else
     [SupplyParameterFromQuery(Name = "course")]
     private string? CourseFromQuery { get; set; }
 
+    private HistoricalPlayerOption? selectedPlayer =>
+        players.FirstOrDefault(player => player.Key == selectedPlayerKey);
+
+    private MkddHistoricalRankingComparisonEntry? selectedEntry =>
+        comparison?.Entries.FirstOrDefault(entry =>
+            selectedPlayer?.PlayerId is not null
+                ? entry.PlayerId == selectedPlayer.PlayerId
+                : entry.HistoricalPlayerAliasId == selectedPlayer?.HistoricalPlayerAliasId);
+
+    private bool AreDatesValid => startDate.Date <= endDate.Date;
+
     protected override async Task OnInitializedAsync()
     {
         try
         {
-            await using var db = await DbFactory.CreateDbContextAsync();
-
-            players = await db.Players
-                .AsNoTracking()
-                .OrderBy(x => x.Name)
-                .Select(x => x.Name)
-                .ToListAsync();
-
-            courses = await db.Courses
-                .AsNoTracking()
-                .OrderBy(x => x.Name)
-                .Select(x => x.Name)
-                .ToListAsync();
-
-
-            // Sélection du joueur transmis depuis sa fiche
-            if (!string.IsNullOrWhiteSpace(PlayerFromQuery) &&
-                players.Contains(PlayerFromQuery))
-            {
-                selectedPlayer = PlayerFromQuery;
-            }
-            else
-            {
-                selectedPlayer = players.Contains("Mattilde F")
-                    ? "Mattilde F"
-                    : players.FirstOrDefault() ?? "";
-            }
-
-            // Sélection du circuit transmis depuis sa fiche
-            if (!string.IsNullOrWhiteSpace(CourseFromQuery) &&
-                courses.Contains(CourseFromQuery))
-            {
-                selectedCourse = CourseFromQuery;
-            }
-            else
-            {
-                selectedCourse = courses.Contains("Luigi Circuit")
-                    ? "Luigi Circuit"
-                    : courses.FirstOrDefault() ?? "";
-            }
-
-
-            if (players.Count > 0 && courses.Count > 0)
-            {
-                await LoadAvailableDatesAsync();
-
-                if (availableSnapshotCount >= 2)
-                {
-                    await AnalyzeAsync();
-                }
-            }
-
+            players = await SelectionService.GetPlayersAsync();
+            courses = await SelectionService.GetCoursesAsync();
+            selectedPlayerKey = ResolvePlayerKey(PlayerFromQuery) ?? players.FirstOrDefault()?.Key ?? "";
+            selectedCourse = courses.Contains(CourseFromQuery ?? "")
+                ? CourseFromQuery!
+                : courses.FirstOrDefault() ?? "";
+            await LoadAvailableDatesAsync();
+            if (availableHistoricalCount >= 2)
+                await AnalyzeAsync();
         }
         catch (Exception ex)
         {
@@ -327,61 +174,38 @@ else
         }
     }
 
+    private string? ResolvePlayerKey(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+
+        return players.FirstOrDefault(player =>
+            string.Equals(player.Key, value, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(player.DisplayName, value, StringComparison.OrdinalIgnoreCase))?.Key;
+    }
+
+    private async Task OnCriteriaChangedAsync()
+    {
+        errorMessage = null;
+        comparison = null;
+        await LoadAvailableDatesAsync();
+    }
 
     private async Task LoadAvailableDatesAsync()
     {
-        availableSnapshotCount = 0;
-        snapshotMessage = null;
-
-        if (string.IsNullOrWhiteSpace(selectedCourse))
+        availableHistoricalCount = 0;
+        if (selectedPlayer is null || string.IsNullOrWhiteSpace(selectedCourse))
             return;
 
-        await using var db = await DbFactory.CreateDbContextAsync();
-
-        var dates = await db.Snapshots
-            .AsNoTracking()
-            .Where(x => x.Course.Name == selectedCourse)
-            .OrderBy(x => x.RankingDate)
-            .Select(x => x.RankingDate)
-            .ToListAsync();
-
-        availableSnapshotCount = dates.Count;
-
-        if (dates.Count == 0)
+        HistoricalPerformanceDateRange range = await SelectionService.GetDateRangeAsync(
+            selectedPlayer, selectedCourse, selectedTimeType, selectedFrequency);
+        availableHistoricalCount = range.Count;
+        if (range.FirstSeenAt is not null && range.LastSeenAt is not null)
         {
-            snapshotMessage =
-                "Aucun snapshot disponible pour ce circuit.";
-
-            return;
-        }
-
-        startDate = dates[0].ToDateTime(TimeOnly.MinValue);
-        endDate = dates[^1].ToDateTime(TimeOnly.MinValue);
-
-        if (dates.Count == 1)
-        {
-            snapshotMessage =
-                "Ce circuit possède un seul snapshot. " +
-                "Il faut au moins deux snapshots pour analyser une évolution.";
+            startDate = range.FirstSeenAt.Value.Date;
+            endDate = range.LastSeenAt.Value.Date;
         }
     }
-
-    // Gérer le changement de circuit
-    private async Task OnCourseChangedAsync()
-    {
-        errorMessage = null;
-        report = null;
-
-        try
-        {
-            await LoadAvailableDatesAsync();
-        }
-        catch (Exception ex)
-        {
-            errorMessage = ex.Message;
-        }
-    }
-
 
     private async Task AnalyzeAsync()
     {
@@ -389,36 +213,42 @@ else
             return;
 
         errorMessage = null;
-        report = null;
-
-        if (string.IsNullOrWhiteSpace(selectedPlayer) ||
-            string.IsNullOrWhiteSpace(selectedCourse))
+        comparison = null;
+        if (selectedPlayer is null || string.IsNullOrWhiteSpace(selectedCourse))
         {
-            errorMessage = "Sélectionne un joueur et un circuit.";
+            errorMessage = "Sélectionnez un joueur et un circuit.";
             return;
         }
-
-        if (startDate.Date > endDate.Date)
+        if (!AreDatesValid)
         {
-            errorMessage =
-                "La date de début doit précéder la date de fin.";
+            errorMessage = "La date de début doit précéder la date de fin.";
             return;
         }
 
         loading = true;
-
         try
         {
-            var evolution = await EvolutionService.AnalyzeAsync(
-                selectedPlayer,
-                selectedCourse,
-                DateOnly.FromDateTime(startDate),
-                DateOnly.FromDateTime(endDate));
+            DateTimeOffset startAt =
+                new(
+                    startDate.Date
+                        .AddDays(1)
+                        .AddTicks(-1),
+                    TimeSpan.Zero);
 
-            if (evolution is not null)
-            {
-                report = ReportService.BuildReport(evolution);
-            }
+            DateTimeOffset endAt =
+                new(
+                    endDate.Date
+                        .AddDays(1)
+                        .AddTicks(-1),
+                    TimeSpan.Zero);
+
+            comparison =
+                await ComparisonService.CompareAsync(
+                    selectedCourse,
+                    selectedTimeType,
+                    selectedFrequency,
+                    startAt,
+                    endAt);
         }
         catch (Exception ex)
         {
@@ -430,15 +260,17 @@ else
         }
     }
 
-    private static string FormatPlaces(int places)
-    {
-        return places > 0
-            ? $"+{places}"
-            : places.ToString();
-    }
+    private static string FormatRank(int? rank) => rank is null ? "—" : $"#{rank}";
 
-    private static string FormatRaceTime(TimeSpan time)
+    private static string FormatPlaces(int? places) => places is null ? "—" : places > 0 ? $"+{places}" : places.Value.ToString();
+
+    private static string FormatRaceTime(TimeSpan? time) => time is null ? "—" : $"{(int)time.Value.TotalMinutes}:{time.Value.Seconds:00}.{time.Value.Milliseconds:000}";
+
+    private static string FormatTimeImprovement(TimeSpan? improvement)
     {
-        return $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+        if (improvement is null)
+            return "—";
+        var sign = improvement.Value >= TimeSpan.Zero ? "+" : "-";
+        return $"{sign}{Math.Abs(improvement.Value.TotalSeconds):0.###} s";
     }
 }
