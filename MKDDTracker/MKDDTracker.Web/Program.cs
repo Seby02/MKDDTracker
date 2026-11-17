@@ -30,6 +30,7 @@ builder.Services.AddScoped<MkddSnapshotImportService>();
 builder.Services.AddScoped<MkddHistoricalRankingService>();
   builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
   builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();
+  builder.Services.AddScoped<MkddHistoricalPlayerTimelineService>();
 
 var app = builder.Build();
 

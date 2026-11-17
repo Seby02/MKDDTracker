@@ -73,6 +73,31 @@ public sealed class MkddHistoricalPlayerTimelineRulesTests
     }
 
     [Fact]
+    public async Task Timeline_DateBoundsIncludeWholeStartAndEndDays()
+    {
+        await using var fixture = await TimelineFixture.CreateAsync();
+        MkddHistoricalPlayerAlias alias = fixture.AddAlias("Player");
+        fixture.AddPerformance("start-day-morning", alias, 95_000, At(2020, 1, 2, 9), 60, 1);
+        fixture.AddPerformance("end-day-evening", alias, 90_000, At(2020, 1, 3, 21), 60, 2);
+        fixture.AddPerformance("after-end-day", alias, 85_000, At(2020, 1, 4, 9), 60, 3);
+        await fixture.SaveChangesAsync();
+
+        DateTimeOffset startAtEndOfDay = EndOf(2020, 1, 2);
+        DateTimeOffset endAtEndOfDay = EndOf(2020, 1, 3);
+        MkddHistoricalPlayerTimeline timeline = await fixture.GetTimelineAsync(
+            alias,
+            null,
+            HistoricalFrequencyFilter.Hz60,
+            startAtEndOfDay,
+            endAtEndOfDay);
+
+        Assert.Equal(2, timeline.Points.Count);
+        Assert.Equal(
+            new[] { At(2020, 1, 2, 9), At(2020, 1, 3, 21) },
+            timeline.Points.Select(point => point.Date));
+    }
+
+    [Fact]
     public async Task Timeline_KeepsFiftyAndSixtyHertzSeriesSeparate()
     {
         await using var fixture = await TimelineFixture.CreateAsync();

@@ -1,0 +1,141 @@
+@using System.Globalization
+@using MKDDTracker.Scraper.Models.Evolution
+
+<div class="card mb-4">
+    <div class="card-body">
+        <h4>Évolution historique du chrono</h4>
+        <p class="text-muted">Date en abscisse · Chrono en ordonnée</p>
+
+        @if (ChartPoints.Count < 2)
+        {
+            <p class="text-muted mb-0">Pas assez de points pour tracer une évolution du chrono.</p>
+        }
+        else
+        {
+            <div style="width:100%; overflow-x:auto;">
+                <div style="position:relative; width:100%; min-width:600px; aspect-ratio:800/350;">
+                    <svg viewBox="0 0 800 350"
+                         preserveAspectRatio="none"
+                         style="position:absolute; inset:0; width:100%; height:100%;"
+                         role="img"
+                         aria-label="Évolution historique du chrono, une valeur plus basse indique un meilleur temps">
+                        @foreach (double tick in TimeTicks)
+                        {
+                            <line x1="65" y1="@GetY(tick)" x2="765" y2="@GetY(tick)"
+                                  stroke="#e5e7eb" stroke-dasharray="4 4" />
+                        }
+
+                        <polyline points="@PolylinePoints" fill="none" stroke="#16a34a" stroke-width="3"
+                                  stroke-linejoin="round" stroke-linecap="round" />
+
+                        @foreach (ChartPoint point in ChartPoints)
+                        {
+                            <circle cx="@GetX(point.Index)" cy="@GetY(point.Time.TotalMilliseconds)" r="6"
+                                    fill="#16a34a" stroke="white" stroke-width="2" />
+                        }
+                    </svg>
+
+                    @foreach (double tick in TimeTicks)
+                    {
+                        <span class="historical-time-axis-label"
+                              style="@LabelStyle(55, GetY(tick), "translate(-100%, -50%)")">
+                            @FormatMilliseconds(tick)
+                        </span>
+                    }
+
+                    @foreach (ChartPoint point in ChartPoints)
+                    {
+                        <span class="historical-time-point-label"
+                              style="@LabelStyle(GetX(point.Index), GetY(point.Time.TotalMilliseconds) - 16, "translate(-50%, -100%)")">
+                            @FormatRaceTime(point.Time)
+                        </span>
+                        <span class="historical-time-axis-label"
+                              style="@LabelStyle(GetX(point.Index), 322, "translate(-50%, -50%)")">
+                            @point.Date.ToString("dd/MM/yy")
+                        </span>
+                    }
+                </div>
+            </div>
+            <p class="text-muted mt-2 mb-0">Les chronos réels sont affichés ; une trajectoire descendante correspond à une amélioration.</p>
+        }
+    </div>
+</div>
+
+<style>
+    .historical-time-axis-label {
+        position: absolute;
+        color: #6b7280;
+        font-size: 12px;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+
+    .historical-time-point-label {
+        position: absolute;
+        color: #166534;
+        font-size: 12px;
+        font-weight: bold;
+        white-space: nowrap;
+        pointer-events: none;
+    }
+</style>
+
+@code {
+    [Parameter, EditorRequired]
+    public IReadOnlyList<MkddHistoricalPlayerTimelinePoint> Points { get; set; } = [];
+
+    private const double Left = 65;
+    private const double Right = 765;
+    private const double Top = 45;
+    private const double Bottom = 285;
+
+    private List<ChartPoint> ChartPoints => Points
+        .Select((point, index) => new ChartPoint(index, point.Date, point.Time))
+        .ToList();
+
+    private double MinTime => ChartPoints.Min(point => point.Time.TotalMilliseconds);
+
+    private double MaxTime => ChartPoints.Max(point => point.Time.TotalMilliseconds);
+
+    private List<double> TimeTicks
+    {
+        get
+        {
+            if (ChartPoints.Count == 0)
+                return [];
+            if (MinTime == MaxTime)
+                return [MinTime];
+
+            return Enumerable.Range(0, 5)
+                .Select(index => MinTime + (MaxTime - MinTime) * index / 4.0)
+                .ToList();
+        }
+    }
+
+    private double GetX(int index) => ChartPoints.Count <= 1
+        ? Left
+        : Left + index * (Right - Left) / (ChartPoints.Count - 1);
+
+    private double GetY(double milliseconds) => MinTime == MaxTime
+        ? (Top + Bottom) / 2
+        : Top + (milliseconds - MinTime) * (Bottom - Top) / (MaxTime - MinTime);
+
+    private string PolylinePoints => string.Join(" ", ChartPoints.Select(point =>
+        $"{GetX(point.Index).ToString(CultureInfo.InvariantCulture)}," +
+        GetY(point.Time.TotalMilliseconds).ToString(CultureInfo.InvariantCulture)));
+
+    private static string FormatRaceTime(TimeSpan time) =>
+        $"{(int)time.TotalMinutes}:{time.Seconds:00}.{time.Milliseconds:000}";
+
+    private static string FormatMilliseconds(double milliseconds) =>
+        FormatRaceTime(TimeSpan.FromMilliseconds(Math.Round(milliseconds)));
+
+    private static string LabelStyle(double x, double y, string transform)
+    {
+        string left = (x / 800 * 100).ToString(CultureInfo.InvariantCulture);
+        string top = (y / 350 * 100).ToString(CultureInfo.InvariantCulture);
+        return $"position:absolute; left:{left}%; top:{top}%; transform:{transform};";
+    }
+
+    private sealed record ChartPoint(int Index, DateTimeOffset Date, TimeSpan Time);
+}

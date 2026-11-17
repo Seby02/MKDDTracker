@@ -70,12 +70,15 @@ public sealed class MkddHistoricalPlayerTimelineService
 
         DateTimeOffset normalizedStartDate = startDate.ToUniversalTime();
         DateTimeOffset normalizedEndDate = endDate.ToUniversalTime();
+        DateOnly startUtcDate = DateOnly.FromDateTime(normalizedStartDate.UtcDateTime);
+        DateOnly endUtcDate = DateOnly.FromDateTime(normalizedEndDate.UtcDateTime);
 
         List<TimelinePerformance> inPeriod = loadedPerformances
             .Where(performance =>
             {
-                DateTimeOffset firstSeenAt = performance.FirstSeenAt.ToUniversalTime();
-                return firstSeenAt >= normalizedStartDate && firstSeenAt <= normalizedEndDate;
+                DateOnly firstSeenUtcDate = DateOnly.FromDateTime(
+                    performance.FirstSeenAt.ToUniversalTime().UtcDateTime);
+                return firstSeenUtcDate >= startUtcDate && firstSeenUtcDate <= endUtcDate;
             })
             .ToList();
 
