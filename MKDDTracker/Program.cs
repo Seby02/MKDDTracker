@@ -5,11 +5,11 @@ using MKDDTracker.Scraper.Parsing;
 using MKDDTracker.Scraper.Models;
 using MKDDTracker.Scraper.Services;
 using MKDDTracker.Scraper.Services.EvolutionService;
-using MKDDTracker.Scraper.Services.SnapshotService;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using MKDDTracker.Scraper.Services.HistoricalImport;
 using System.Globalization;
+using MKDDTracker.Scraper.Services.SnapshotService;
 
 if (args.Contains(
     "--dry-run-fix-pre2003-dates",
@@ -724,29 +724,6 @@ await demoSeeder.SeedAsync(
 
 Console.WriteLine($"Base de démonstration prête : {demoDatabasePath}");
 Console.WriteLine("La base réelle mkddtracker.db n'a pas été modifiée.");
-
-var comparisonService = new MkddSnapshotComparisonService(db);
-var playerEvolutionService = new MkddPlayerEvolutionService(
-    db,
-    comparisonService);
-
-var evolution = await playerEvolutionService.AnalyzeAsync(
-    playerName,
-    courseName,
-    new DateOnly(2026, 9, 1),
-    new DateOnly(2026, 9, 22));
-
-if (evolution is null)
-{
-    Console.Error.WriteLine("Impossible d'analyser le scénario de démonstration.");
-    Environment.ExitCode = 1;
-    return;
-}
-
-var report = new MkddEvolutionReportService().BuildReport(evolution);
-new MkddEvolutionConsoleRenderer().Render(report);
-
-
 
 static async Task DryRunHistoricalImportAsync()
 {

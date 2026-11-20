@@ -49,7 +49,7 @@ Aucun des trois parcours historiques principaux n’utilise l’ancien modèle. La le
 | `Services/SnapshotService/MkddSnapshotHistoryMigrationResult.cs` | Porte le résultat et les plans de la conversion. À conserver avec le service jusqu’à ce que la migration soit exécutée, rapprochée et archivée. |
 | `MKDDTracker.Tests/MkddSnapshotHistoryMigrationServiceTests.cs` | Vérifie dry-run, import, calcul des PR et idempotence. À garder tant que le convertisseur est maintenu ; ensuite remplacer par des tests de migration/validation des données. |
 
-La conversion actuelle ne copie pas chaque rang d’un snapshot : elle extrait les améliorations strictes de chrono par joueur/circuit, ignore les chronos identiques et moins bons, définit `TimeType = ThreeLap`, laisse la fréquence inconnue et dérive `FirstSeenAt` de `RecordDate`. Il faut valider que ces règles répondent aux besoins avant de considérer les tables source supprimables.
+La conversion actuelle ne copie pas chaque rang d'un snapshot : elle extrait les améliorations strictes de chrono par joueur/circuit, ignore les chronos identiques et moins bons, définit `TimeType = ThreeLap`, laisse la fréquence inconnue et dérive `FirstSeenAt` de `RecordDate`. Il faut valider que ces règles répondent aux besoins avant de considérer les tables source supprimables.
 
 ### D — Compatibilité legacy et base SQLite
 
@@ -192,3 +192,66 @@ Remplacer ou retirer en priorité les dépendances UI du dashboard, puis remplacer
 - **Références textuelles Snapshot restantes dans les fichiers C#/Razor source : 371 occurrences** après le retrait des quatre candidats G et du test dédié supprimé. Ce chiffre est une mesure de contrôle textuelle, pas un décompte de dépendances activées; les usages runtime sont documentés dans les sections précédentes.
 - **Tests pertinents restants : 104 réussis, 0 échec, 0 ignoré.**
 - **Avertissements de build restants : 3 avertissements préexistants** (duplicate using CS0105 dans un test; 2 recommandations analytiques xUnit2013). Aucun avertissement nouveau lié au nettoyage.
+
+## Cleanup Step 2 — Legacy Evolution Engine
+
+### Classification finale
+
+| Élément | Décision | Justification |
+|---|---|---|
+| `MkddPlayerEvolutionService` | `SafeToDelete` | Dépend uniquement de `Snapshots`/`Performances` et n’a aucun appelant Razor, historique ou DI restant. |
+| `MkddEvolutionReportService` | `SafeToDelete` | N’alimente que l’ancien rapport console supprimé; aucun consommateur historique ou Razor restant. |
+| `MkddEvolutionConsoleRenderer` | `SafeToDelete` | Exclusivement associé au chemin console `--seed-demo` de l’ancien moteur d’évolution. |
+| `MkddCompletePlayerEvolution` | `SafeToDelete` | Modèle exclusivement utilisé par `MkddPlayerEvolutionService` et `MkddEvolutionReportService`. |
+| `MkddPlayerEvolutionStep` | `SafeToDelete` | Modèle exclusivement utilisé par l’ancien moteur d’évolution. |
+| `MkddPlayerEvolutionReport` | `SafeToDelete` | Modèle exclusivement utilisé par l’ancien rapport console. |
+| `MkddPlayerEvolution` | `SafeToDelete` | Ancien modèle d’évolution Snapshot sans appelant direct, Razor ou test. |
+| `MkddPlayerEvolutionPoint` | `SafeToDelete` | Modèle exclusivement porté par `MkddPlayerEvolution`. |
+| `MkddPlayerSnapshotComparison` | `SafeToDelete` | Modèle d’ancienne chaîne Snapshot sans appelant restant. |
+| `MkddRankEvolutionChart` | `SafeToDelete` | Déjà absent du workspace; `/evolution` utilise exclusivement `MkddHistoricalRankEvolutionChart`. |
+| `MkddTimeEvolutionChart` | `SafeToDelete` | Déjà absent du workspace; `/evolution` utilise exclusivement `MkddHistoricalTimeEvolutionChart`. |
+| `MkddSnapshotComparisonService` | `LegacyRequired` | Sert les tests de mouvements, reste appelé par une commande/chaîne de compatibilité legacy et doit être conservé pour la comparaison servant encore à la migration legacy. |
+| `MkddSnapshotHistoryMigrationService` | `LegacyRequired` | Convertit les snapshots vers `HistoricalPerformances`; explicitement exclu de cette étape. |
+| `MkddSnapshotImportService` | `LegacyRequired` | Toujours exposé par `/import`; explicitement exclu de cette étape. |
+
+### Éléments supprimés
+
+- `MKDDTracker/Services/EvolutionService/MkddPlayerEvolutionService.cs`
+- `MKDDTracker/Services/EvolutionService/MkddEvolutionReportService.cs`
+- `MKDDTracker/Services/EvolutionService/MkddEvolutionConsoleRenderer.cs`
+- `MKDDTracker/Scraper/Models/Evolution/MkddCompletePlayerEvolution.cs`
+- `MKDDTracker/Scraper/Models/Evolution/MkddPlayerEvolutionStep.cs`
+- `MKDDTracker/Scraper/Models/Evolution/MkddPlayerEvolutionReport.cs`
+- `MKDDTracker/Scraper/Models/MkddPlayerEvolution.cs`
+- `MKDDTracker/Scraper/Models/MkddPlayerEvolutionPoint.cs`
+- `MKDDTracker/Scraper/Models/MkddPlayerSnapshotComparison.cs`
+
+Les anciens composants `MkddRankEvolutionChart` et `MkddTimeEvolutionChart` avaient déjà été supprimés à l’étape 1. Aucun autre ancien graphique n’est référencé par `/evolution`.
+
+### Fichiers modifiés
+
+- `MKDDTracker/Program.cs` : retrait du bloc console appelant les anciens services supprimés.
+- `MKDDTracker/MKDDTracker.Web/Program.cs` : retrait des deux inscriptions DI de `MkddPlayerEvolutionService` et `MkddEvolutionReportService`.
+- `MKDDTracker.Tests/MkddPlayerMovementTests.cs` : adaptation conservant les tests du `MkddSnapshotComparisonService` et retirant uniquement les constructions des anciens modèles de rapport supprimés.
+- `docs/snapshot-legacy-audit.md` : résultats de l’audit et classification finalisée.
+
+### DI et pages historiques
+
+Les inscriptions supprimées sont uniquement :
+
+- `AddScoped<MkddPlayerEvolutionService>()`
+- `AddScoped<MkddEvolutionReportService>()`
+
+Conservées : `MkddSnapshotComparisonService`, `MkddSnapshotImportService` et tous les services historiques. Les pages `/evolution`, `/ranking` et `/joueurs` continuent d’utiliser uniquement les services historiques.
+
+### Tests
+
+Avant cette étape : 104 tests. Après adaptation : 104 tests. Aucun test n’a été supprimé à cette étape. Le test `MkddPlayerMovementTests` reste une couverture du moteur de comparaison Snapshot legacy, nécessaire à la compatibilité et aux mouvements legacy. Les tests historiques, migrations/base legacy, import Snapshot vers historique, initialisation SQLite et sauvegarde restent conservés.
+
+### Dépendances Snapshot restantes
+
+Reste également nécessaire : `MkddSnapshotComparisonService`, `MkddSnapshotHistoryMigrationService`, `MkddSnapshotImportService`, les entités et DbSet, les tables Snapshot/Performances, les migrations, l’initialiseur SQLite, `/import`, `/database-check` et le dashboard `/` tant que leur remplacement n’est pas validé.
+
+### Prochaine étape recommandée
+
+Consolider l’import moderne, valider la migration Snapshot vers historique sur une copie SQLite, puis supprimer progressivement les tables, entités, DbSet, inspecteur et compatibilité legacy lors d’une migration EF ultérieure explicitemment séparée.

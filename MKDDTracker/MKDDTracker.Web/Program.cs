@@ -34,16 +34,15 @@ builder.Services.AddSingleton<MkddDatabaseSchemaInspector>();
 builder.Services.AddScoped<MkddDatabaseInitializer>();
 builder.Services.AddScoped<MkddHistoricalDatabaseCheckService>();
 builder.Services.AddScoped<MkddHistoricalDashboardService>();
+builder.Services.AddScoped<MkddHistoricalImportService>();
+builder.Services.AddScoped<MkddHistoricalRankingService>();
+builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
+builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();
+builder.Services.AddScoped<MkddHistoricalPlayerTimelineService>();
+builder.Services.AddScoped<MkddHistoricalPlayerProfileService>();
 builder.Services.AddScoped<MkddSnapshotComparisonService>();
-builder.Services.AddScoped<MkddPlayerEvolutionService>();
-builder.Services.AddScoped<MkddEvolutionReportService>();
 builder.Services.AddScoped<MkddSnapshotImportService>();
 builder.Services.AddScoped<MkddHistoricalModernImportService>();
-builder.Services.AddScoped<MkddHistoricalRankingService>();
-  builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
-  builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();
-  builder.Services.AddScoped<MkddHistoricalPlayerTimelineService>();
-builder.Services.AddScoped<MkddHistoricalPlayerProfileService>();
 
 var app = builder.Build();
 

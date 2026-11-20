@@ -2,7 +2,6 @@ using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Data.Entities;
 using MKDDTracker.Scraper.Models.Evolution;
-using MKDDTracker.Scraper.Services.EvolutionService;
 using MKDDTracker.Scraper.Services.Ranking;
 using MKDDTracker.Scraper.Services.SnapshotService;
 using MovementAnalysis = MKDDTracker.Scraper.Models.Evolution.MkddRankMovementAnalysis;
@@ -45,28 +44,8 @@ public sealed class MkddPlayerMovementTests
         Assert.Equal(analysis.DirectMovements, analysis.PlayersWhoMoved);
         Assert.NotEqual(0, movement.RelatedPlayerId);
 
-        var report = new MkddEvolutionReportService().BuildReport(
-            new MkddCompletePlayerEvolution(
-                analysis.PlayerName,
-                analysis.CourseName,
-                new[]
-                {
-                    new MkddPlayerEvolutionStep(
-                        analysis.PreviousDate,
-                        analysis.CurrentDate,
-                        analysis.PreviousRank,
-                        analysis.CurrentRank,
-                        analysis.PreviousTime,
-                        analysis.CurrentTime,
-                        analysis.CounterfactualRank,
-                        analysis.TotalPlacesGained,
-                        analysis.PlacesGainedFromOwnImprovement,
-                        analysis.PlacesGainedFromOthers,
-                        analysis.PlayersWhoMoved,
-                        analysis.RankImpacts)
-                }));
-
-        Assert.Single(report.DirectMovements);
+        Assert.NotNull(analysis.DirectMovements);
+        Assert.Single(analysis.DirectMovements);
     }
 
     [Fact]
