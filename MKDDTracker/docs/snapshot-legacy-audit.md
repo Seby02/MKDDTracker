@@ -109,6 +109,44 @@ Aucune de ces pages ne requête `db.Snapshots` ou `db.Performances`, ni n’injecte
 
 Ne sont **pas** classés supprimables immédiatement : `MkddSnapshotComparisonService`, `MkddPlayerEvolutionService`, `MkddEvolutionReportService` et `MkddEvolutionConsoleRenderer` participent au chemin explicite `--seed-demo` de `Program.cs`. Il faut décider de maintenir, moderniser ou retirer cette démonstration avant de supprimer cette chaîne. `MkddSnapshotImportService` reste utilisé par `/import`.
 
+## Cleanup Step 1 Results
+
+### Décisions finales
+
+| Candidat G | Décision | Justification |
+|---|---|---|
+| `MKDDTracker/Services/EvolutionService/MkddEvolutionService.cs` | `SafeToDelete` | Aucun appelant direct, aucune injection DI, aucune référence Razor, aucun test, aucune réflexion/configuration/sérialisation ou commande console ne l’utilise. Le composant ne participe à aucun flux actif. |
+| `MKDDTracker/Services/SnapshotService/MkddSnapshotService.cs` | `SafeToDelete` | Aucun appelant de production ni inscription DI. Il n’est utilisé que par son test dédié, qui couvre exclusivement cette ancienne persistance. |
+| `MKDDTracker/MKDDTracker.Web/Components/Charts/MkddTimeEvolutionChart.razor` | `SafeToDelete` | Aucun composant Razor ou page ne le référence ; les pages utilisent les graphiques historiques modernes. |
+| `MKDDTracker/MKDDTracker.Web/Components/Charts/MkddRankEvolutionChart.razor` | `SafeToDelete` | Aucun composant Razor ou page ne le référence ; les pages utilisent les graphiques historiques modernes. |
+
+### Éléments réellement supprimés
+
+- `MKDDTracker/Services/EvolutionService/MkddEvolutionService.cs`
+- `MKDDTracker/Services/SnapshotService/MkddSnapshotService.cs`
+- `MKDDTracker/MKDDTracker.Web/Components/Charts/MkddTimeEvolutionChart.razor`
+- `MKDDTracker/MKDDTracker.Web/Components/Charts/MkddRankEvolutionChart.razor`
+- `MKDDTracker.Tests/MkddSnapshotServiceTests.cs`, test exclusivement dédié au service Snapshot supprimé
+
+Aucune inscription DI n’était associée à ces candidats : les classes n’étaient enregistrées ni dans `MKDDTracker.Web/Program.cs`, ni dans les modes console. Aucun using de production n’a donc dû être retiré pour une inscription devenue orpheline.
+
+### Dépendances Snapshot restantes
+
+Les entités, DbSet, tables SQLite, migrations, initialiseur, inspecteur, service de migration, import legacy, données de démonstration et leurs tests restent inchangés. Les dépendances opérationnelles restantes sont notamment `/`, `/database-check`, `/import`, `MkddSnapshotImportService`, `MkddSnapshotComparisonService`, `MkddDemoDataSeeder`, `MkddSnapshotHistoryMigrationService` et la compatibilité SQLite.
+
+### Prochaine étape recommandée
+
+Remplacer ou retirer en priorité les dépendances UI du dashboard, puis remplacer l’import legacy par un flux historique moderne. Ensuite, traiter les modes console de démonstration/comparaison séparément, puis valider les données avant toute migration finale retirant les tables ou entités legacy.
+
+### Validation de cette étape
+
+- branche Git : `dev`, aucun commit créé
+- aucune migration EF Core créée ou modifiée
+- aucune donnée SQLite lue ou modifiée
+- aucune table, entité, DbSet ou migration des candidats interdits modifié
+- les pages `/`, `/joueurs`, `/ranking`, `/evolution`, `/import` et `/database-check` n’ont pas été modifiées
+- les noms des quatre types supprimés ne sont plus présents dans le code source ou les tests; seules les mentions historiques de ce rapport peuvent subsister
+
 ## Programmes, scraping et injection de dépendances
 
 - `MKDDTracker.Web/Program.cs` initialise la base utilisateur et inscrit encore les services d’import/comparaison legacy ; la page d’import en consomme un. La comparaison legacy n’est pas utilisée par les trois routes historiques.
@@ -134,7 +172,7 @@ Ne sont **pas** classés supprimables immédiatement : `MkddSnapshotComparisonServ
 
 ## Ordre recommandé de suppression / migration
 
-1. **Étape 1 — Dashboard** : remplacer les comptes et la liste Snapshot de `Home.razor` par des indicateurs explicitement définis à partir de l’historique moderne ; tester les cas sans données et historiques incomplets.
+1. **Étape 1 — Dashboard** : remplacer les comptes et la liste Snapshot de `Home.razor` par des indicateurs explicitiemnt définis à partir de l’historique moderne ; tester les cas sans données et historiques incomplets.
 2. **Étape 2 — Import moderne** : définir la conversion du HTML vers `HistoricalPerformances` (type, fréquence, date/source, statut, alias) et remplacer `/import` sans perte des validations transactionnelles requises.
 3. **Étape 3 — Anciens services Evolution et graphiques** : décider du sort de `--seed-demo`, puis retirer ou moderniser l’ancienne chaîne de comparaison et ses modèles/graphiques ; la route `/evolution` actuelle reste sur ses services historiques.
 4. **Étape 4 — DI et code mort** : après preuve d’absence d’appelants, retirer les inscriptions et composants/services legacy inutilisés ; conserver les services de conversion tant que l’étape 6 n’est pas validée.
@@ -150,3 +188,7 @@ Ne sont **pas** classés supprimables immédiatement : `MkddSnapshotComparisonServ
 - **Pages UI encore dépendantes : 3** — `/`, `/database-check`, `/import`.
 - **Tests réussis : 80 exactement**.
 - **Ordre recommandé :** dashboard ? import moderne ? anciens services Evolution et graphiques ? DI/code mort ? tests legacy ? entités/DbSet ? migration DB finale.
+
+- **Références textuelles Snapshot restantes dans les fichiers C#/Razor source : 371 occurrences** après le retrait des quatre candidats G et du test dédié supprimé. Ce chiffre est une mesure de contrôle textuelle, pas un décompte de dépendances activées; les usages runtime sont documentés dans les sections précédentes.
+- **Tests pertinents restants : 104 réussis, 0 échec, 0 ignoré.**
+- **Avertissements de build restants : 3 avertissements préexistants** (duplicate using CS0105 dans un test; 2 recommandations analytiques xUnit2013). Aucun avertissement nouveau lié au nettoyage.

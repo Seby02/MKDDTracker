@@ -30,6 +30,7 @@
 	</ItemGroup>
 
   <ItemGroup>
+    <Folder Include="MKDDTracker\MKDDTracker.Tests\" />
     <Folder Include="Samples\" />
   </ItemGroup>
 

@@ -161,12 +161,10 @@ MKDDTracker/
 ├── Services/
 │   ├── MkddTestDataSeeder.cs
 │   ├── EvolutionService/
-│   │   ├── MkddEvolutionService.cs
 │   │   ├── MkddPlayerEvolutionService.cs
 │   │   ├── MkddEvolutionReportService.cs
 │   │   └── MkddEvolutionConsoleRenderer.cs
 │   └── SnapshotService/
-│       ├── MkddSnapshotService.cs
 │       ├── MkddSnapshotImportService.cs
 │       └── MkddSnapshotComparisonService.cs
 │
