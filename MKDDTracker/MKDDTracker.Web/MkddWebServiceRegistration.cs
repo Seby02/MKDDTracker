@@ -57,11 +57,6 @@ public static class MkddWebServiceRegistration
             serviceProvider.GetRequiredService<
                 MkddHistoricalRankingService>()));
         services.AddScoped<MkddHistoricalPlayerProfileService>();
-        services.AddScoped<MkddSnapshotImportService>(
-    serviceProvider =>
-        new MkddSnapshotImportService(
-            serviceProvider.GetRequiredService<
-                IDbContextFactory<MkddDbContext>>()));
         services.AddScoped<MkddHistoricalModernImportService>();
 
         return services;
