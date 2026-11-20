@@ -1,52 +1,165 @@
 ﻿@page "/database-check"
-@using MKDDTracker.Scraper.Data.Entities
-@using Microsoft.EntityFrameworkCore
-@using MKDDTracker.Scraper.Data.Database
-@inject IDbContextFactory<MkddDbContext> DbFactory
+@using MKDDTracker.Scraper.Services.Database
+@inject MkddHistoricalDatabaseCheckService DatabaseCheckService
 
-<h1>Vérification de la base</h1>
+<PageTitle>Vérification de la base - MKDD Tracker</PageTitle>
 
-@if (snapshots is null)
+<h1>Diagnostic de la base historique</h1>
+
+<p class="text-muted">
+    Source de vérité métier : <strong>HistoricalPerformances</strong>
+</p>
+
+@if (!string.IsNullOrWhiteSpace(loadError))
 {
-    <p>Chargement...</p>
+    <div class="alert alert-danger" role="alert">@loadError</div>
+}
+else if (result is null)
+{
+    <p>Chargement du diagnostic...</p>
 }
 else
 {
-    <p>Nombre de snapshots : @snapshots.Count</p>
+    <div class="alert @GetStatusClass(result.Status)" role="status">
+        <strong>Statut global : @result.Status</strong>
+        <span class="ms-2">Base accessible : @(result.DatabaseAccessible ? "oui" : "non")</span>
+    </div>
 
-    <table class="table">
-        <thead>
-            <tr>
-                <th>Circuit</th>
-                <th>Date</th>
-                <th>Performances</th>
-            </tr>
-        </thead>
-        <tbody>
-            @foreach (var snapshot in snapshots)
+    <section class="card mb-4">
+        <div class="card-header">
+            <h2 class="h4 mb-0">Historique unifié</h2>
+        </div>
+        <div class="card-body">
+            <div class="row g-3 mb-4">
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Circuits historiques</strong><div>@result.Historical.HistoricalCourseCount</div></div></div>
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Alias historiques</strong><div>@result.Historical.HistoricalAliasCount</div></div></div>
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Joueurs modernes liés</strong><div>@result.Historical.LinkedModernPlayerCount</div></div></div>
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Performances historiques</strong><div>@result.Historical.HistoricalPerformanceCount</div></div></div>
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Sources</strong><div>@result.Historical.SourceCount</div></div></div>
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Première FirstSeenAt</strong><div>@FormatDate(result.Historical.FirstSeenAt)</div></div></div>
+                <div class="col-6 col-lg-3"><div class="border rounded p-3 h-100"><strong>Dernière FirstSeenAt</strong><div>@FormatDate(result.Historical.LastSeenAt)</div></div></div>
+            </div>
+
+            <h3 class="h5">Répartition des données</h3>
+            <div class="table-responsive mb-4">
+                <table class="table table-sm table-bordered">
+                    <thead><tr><th>Catégorie</th><th>Compte</th><th>Catégorie</th><th>Compte</th></tr></thead>
+                    <tbody>
+                        <tr><th>YahooGroups</th><td>@result.Historical.YahooGroupsCount</td><th>MKDDTracker</th><td>@result.Historical.MkddTrackerCount</td></tr>
+                        <tr><th>ThreeLap</th><td>@result.Historical.ThreeLapCount</td><th>Flap</th><td>@result.Historical.FlapCount</td></tr>
+                        <tr><th>Unknown TimeType</th><td>@result.Historical.UnknownTimeTypeCount</td><th>50 Hz</th><td>@result.Historical.FiftyHzCount</td></tr>
+                        <tr><th>60 Hz</th><td>@result.Historical.SixtyHzCount</td><th>Fréquence inconnue</th><td>@result.Historical.UnknownFrequencyCount</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="h5">Intégrité historique</h3>
+            <div class="table-responsive mb-4">
+                <table class="table table-sm table-striped">
+                    <thead><tr><th>Contrôle</th><th>Anomalies</th></tr></thead>
+                    <tbody>
+                        <tr><td>Performances sans alias valide</td><td>@result.Integrity.PerformancesWithoutAlias</td></tr>
+                        <tr><td>Performances sans circuit valide</td><td>@result.Integrity.PerformancesWithoutCourse</td></tr>
+                        <tr><td>ExternalKey vide / doublons</td><td>@result.Integrity.EmptyExternalKeys / @result.Integrity.DuplicateExternalKeyGroups</td></tr>
+                        <tr><td>Time invalide / TimeType invalide / Frequency invalide</td><td>@result.Integrity.NonPositiveTimes / @result.Integrity.InvalidTimeTypes / @result.Integrity.InvalidFrequencies</td></tr>
+                        <tr><td>FirstSeenAt non plausible</td><td>@result.Integrity.ImplausibleFirstSeenDates</td></tr>
+                        <tr><td>Improvement négatif / PR incohérent</td><td>@result.Integrity.NegativeApprovedImprovements / @result.Integrity.IncoherentApprovedPrMetadata</td></tr>
+                        <tr><td>Alias Matched sans PlayerId / joueur absent</td><td>@result.Integrity.MatchedAliasesWithoutPlayer / @result.Integrity.AliasesPointingToMissingPlayers</td></tr>
+                        <tr><td>Alias non résolus sans joueur moderne</td><td>@result.Integrity.UnresolvedAliasesWithoutPlayer</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h3 class="h5">Vérifications réussies</h3>
+            @if (result.Checks.Any(check => check.State == DatabaseCheckState.Passed))
             {
-                <tr>
-                    <td>@snapshot.Course.Name</td>
-                    <td>@snapshot.RankingDate.ToString("dd/MM/yyyy")</td>
-                    <td>@snapshot.Performances.Count</td>
-                </tr>
+                <ul class="list-group mb-4">
+                    @foreach (HistoricalDatabaseCheckItem check in result.Checks.Where(check => check.State == DatabaseCheckState.Passed))
+                    {
+                        <li class="list-group-item"><strong>@check.Name :</strong> @check.Details</li>
+                    }
+                </ul>
             }
-        </tbody>
-    </table>
+            else
+            {
+                <p class="text-muted">Aucun contrôle n’a pu être validé.</p>
+            }
+
+            <h3 class="h5">Warnings</h3>
+            @if (result.Warnings.Count == 0)
+            {
+                <p class="text-muted">Aucun warning.</p>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush mb-4">
+                    @foreach (string warning in result.Warnings)
+                    {
+                        <li class="list-group-item list-group-item-warning">@warning</li>
+                    }
+                </ul>
+            }
+
+            <h3 class="h5">Erreurs</h3>
+            @if (result.Errors.Count == 0)
+            {
+                <p class="text-muted">Aucune erreur.</p>
+            }
+            else
+            {
+                <ul class="list-group list-group-flush">
+                    @foreach (string error in result.Errors)
+                    {
+                        <li class="list-group-item list-group-item-danger">@error</li>
+                    }
+                </ul>
+            }
+        </div>
+    </section>
+
+    <section class="card mb-4">
+        <div class="card-header"><h2 class="h5 mb-0">Legacy Snapshot</h2></div>
+        <div class="card-body">
+            <p class="text-muted">Système legacy conservé temporairement pour compatibilité et validation.</p>
+            @if (result.Legacy.IsAvailable)
+            {
+                <dl class="row mb-0">
+                    <dt class="col-sm-6">Snapshots</dt><dd class="col-sm-6">@result.Legacy.SnapshotCount</dd>
+                    <dt class="col-sm-6">Performances legacy</dt><dd class="col-sm-6">@result.Legacy.PerformanceCount</dd>
+                    <dt class="col-sm-6">Dernière RankingDate</dt><dd class="col-sm-6">@(result.Legacy.LastRankingDate?.ToString("dd/MM/yyyy") ?? "Aucune")</dd>
+                </dl>
+            }
+            else
+            {
+                <p class="mb-0">Tables Snapshot indisponibles ; cela n’affecte pas la santé de l’historique unifié.</p>
+            }
+        </div>
+    </section>
 }
 
 @code {
-    private List<MkddSnapshot>? snapshots;
+    private MkddHistoricalDatabaseCheckResult? result;
+    private string? loadError;
 
     protected override async Task OnInitializedAsync()
     {
-        await using var db = await DbFactory.CreateDbContextAsync();
-
-        snapshots = await db.Snapshots
-            .AsNoTracking()
-            .Include(x => x.Course)
-            .Include(x => x.Performances)
-            .OrderByDescending(x => x.RankingDate)
-            .ToListAsync();
+        try
+        {
+            result = await DatabaseCheckService.CheckAsync();
+        }
+        catch (Exception exception)
+        {
+            loadError = $"Le diagnostic n’a pas pu être exécuté : {exception.Message}";
+        }
     }
+
+    private static string GetStatusClass(HistoricalDatabaseHealthStatus status) => status switch
+    {
+        HistoricalDatabaseHealthStatus.Healthy => "alert-success",
+        HistoricalDatabaseHealthStatus.Warning => "alert-warning",
+        _ => "alert-danger"
+    };
+
+    private static string FormatDate(DateTimeOffset? value) =>
+        value?.ToLocalTime().ToString("dd/MM/yyyy HH:mm") ?? "Aucune";
 }
