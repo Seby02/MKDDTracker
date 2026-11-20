@@ -7,10 +7,16 @@ namespace MKDDTracker.Scraper.Services.EvolutionService;
 
 public sealed class MkddHistoricalRankingService
 {
-    private readonly MkddDbContext _db;
+    private readonly IDbContextFactory<MkddDbContext>? _dbFactory;
+    private readonly MkddDbContext? _db;
 
     public MkddHistoricalRankingService(
-        MkddDbContext db)
+        IDbContextFactory<MkddDbContext> dbFactory)
+    {
+        _dbFactory = dbFactory;
+    }
+
+    public MkddHistoricalRankingService(MkddDbContext db)
     {
         _db = db;
     }
@@ -29,6 +35,8 @@ public sealed class MkddHistoricalRankingService
         if (!IsSupportedTimeType(timeType))
             return null;
 
+        MkddDbContext db = _db ?? await _dbFactory!.CreateDbContextAsync(cancellationToken);
+
         //
         // SQLite présente des limitations pour comparer et
         // ordonner directement des DateTimeOffset.
@@ -38,12 +46,12 @@ public sealed class MkddHistoricalRankingService
         //
 
         IQueryable<MkddHistoricalPerformance> performanceQuery =
-    _db.HistoricalPerformances
-        .AsNoTracking()
-        .Where(performance =>
-            performance.Course.Name == courseName
-            &&
-            performance.TimeType == timeType);
+            db.HistoricalPerformances
+                .AsNoTracking()
+                .Where(performance =>
+                    performance.Course.Name == courseName
+                    &&
+                    performance.TimeType == timeType);
 
         performanceQuery =
             ApplyFrequencyFilter(

@@ -24,13 +24,15 @@
 
 	<ItemGroup>
 		<Compile Remove="MKDDTracker.Web\**\*.cs" />
+		<Compile Remove="MKDDTracker\**" />
 		<Content Remove="MKDDTracker.Web\**\*" />
 		<None Remove="MKDDTracker.Web\**\*" />
+		<None Remove="MKDDTracker\**" />
 		<EmbeddedResource Remove="MKDDTracker.Web\**\*" />
+		<EmbeddedResource Remove="MKDDTracker\**" />
 	</ItemGroup>
 
   <ItemGroup>
-    <Folder Include="MKDDTracker\MKDDTracker.Tests\" />
     <Folder Include="Samples\" />
   </ItemGroup>
 

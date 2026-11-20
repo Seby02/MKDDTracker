@@ -19,6 +19,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MKDDTracker\MKDDTracker.csproj" />
+    <ProjectReference Include="..\MKDDTracker\MKDDTracker.Web\MKDDTracker.Web.csproj" />
   </ItemGroup>
 
   <ItemGroup>

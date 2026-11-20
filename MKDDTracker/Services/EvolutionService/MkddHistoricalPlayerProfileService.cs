@@ -95,8 +95,8 @@ public sealed class MkddHistoricalPlayerProfileService
             ? modernAlias?.ModernPlayerName ?? player.DisplayName
             : aliases.FirstOrDefault()?.ExternalName ?? player.DisplayName;
 
-        var rankingService = new MkddHistoricalRankingService(db);
-        var timelineService = new MkddHistoricalPlayerTimelineService(db, rankingService);
+        var rankingService = new MkddHistoricalRankingService(_dbFactory);
+        var timelineService = new MkddHistoricalPlayerTimelineService(_dbFactory, rankingService);
         var rankingCache = new Dictionary<RankingRequestKey, MkddHistoricalRanking?>();
         var categories = new List<MkddHistoricalPlayerCategorySummary>();
 

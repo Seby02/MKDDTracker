@@ -1,10 +1,7 @@
 using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Services.Database;
-using MKDDTracker.Scraper.Services.Dashboard;
-using MKDDTracker.Scraper.Services.EvolutionService;
-using MKDDTracker.Scraper.Services.HistoricalImport;
-using MKDDTracker.Scraper.Services.SnapshotService;
+using MKDDTracker.Web;
 using MKDDTracker.Web.Components;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -20,29 +17,7 @@ builder.Services.AddRazorComponents()
 MkddDatabasePaths.EnsureApplicationDataDirectoryExists();
 var databasePath = MkddDatabasePaths.RealDatabasePath;
 
-builder.Services.AddDbContextFactory<MkddDbContext>(options =>
-    options.UseSqlite($"Data Source={databasePath}"));
-
-MkddTimeTypePlausibilityOptions timeTypePlausibilityOptions = builder.Configuration
-    .GetSection("HistoricalImport:TimeTypePlausibility")
-    .Get<MkddTimeTypePlausibilityOptions>() ?? new();
-timeTypePlausibilityOptions.Validate();
-builder.Services.AddSingleton(timeTypePlausibilityOptions);
-
-builder.Services.AddSingleton<MkddDatabaseBackupService>();
-builder.Services.AddSingleton<MkddDatabaseSchemaInspector>();
-builder.Services.AddScoped<MkddDatabaseInitializer>();
-builder.Services.AddScoped<MkddHistoricalDatabaseCheckService>();
-builder.Services.AddScoped<MkddHistoricalDashboardService>();
-builder.Services.AddScoped<MkddHistoricalImportService>();
-builder.Services.AddScoped<MkddHistoricalRankingService>();
-builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
-builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();
-builder.Services.AddScoped<MkddHistoricalPlayerTimelineService>();
-builder.Services.AddScoped<MkddHistoricalPlayerProfileService>();
-builder.Services.AddScoped<MkddSnapshotComparisonService>();
-builder.Services.AddScoped<MkddSnapshotImportService>();
-builder.Services.AddScoped<MkddHistoricalModernImportService>();
+builder.Services.AddMkddWebServices(builder.Configuration, databasePath);
 
 var app = builder.Build();
 

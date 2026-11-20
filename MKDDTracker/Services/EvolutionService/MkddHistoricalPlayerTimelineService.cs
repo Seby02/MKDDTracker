@@ -7,9 +7,20 @@ namespace MKDDTracker.Scraper.Services.EvolutionService;
 
 public sealed class MkddHistoricalPlayerTimelineService
 {
-    private readonly MkddDbContext _db;
+    private readonly IDbContextFactory<MkddDbContext>? _dbFactory;
+    private readonly MkddDbContext? _db;
     private readonly MkddHistoricalRankingService _rankingService;
     private readonly Action<DateOnly>? _rankingDateRequested;
+
+    public MkddHistoricalPlayerTimelineService(
+        IDbContextFactory<MkddDbContext> dbFactory,
+        MkddHistoricalRankingService rankingService,
+        Action<DateOnly>? rankingDateRequested = null)
+    {
+        _dbFactory = dbFactory;
+        _rankingService = rankingService;
+        _rankingDateRequested = rankingDateRequested;
+    }
 
     public MkddHistoricalPlayerTimelineService(
         MkddDbContext db,
@@ -69,6 +80,11 @@ public sealed class MkddHistoricalPlayerTimelineService
     {
         ArgumentNullException.ThrowIfNull(player);
 
+        await using var factoryDb = _db is null
+            ? await _dbFactory!.CreateDbContextAsync(cancellationToken)
+            : null;
+        var db = _db ?? factoryDb!;
+
         if (string.IsNullOrWhiteSpace(courseName) ||
             !IsSupportedTimeType(timeType) ||
             startDate.ToUniversalTime() > endDate.ToUniversalTime() ||
@@ -77,7 +93,7 @@ public sealed class MkddHistoricalPlayerTimelineService
             return null;
         }
 
-        IQueryable<MkddHistoricalPerformance> query = _db.HistoricalPerformances
+        IQueryable<MkddHistoricalPerformance> query = db.HistoricalPerformances
             .AsNoTracking()
             .Where(performance =>
                 performance.Course.Name == courseName &&

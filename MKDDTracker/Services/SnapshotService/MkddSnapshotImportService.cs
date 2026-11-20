@@ -10,11 +10,18 @@ namespace MKDDTracker.Scraper.Services.SnapshotService;
 
 public sealed class MkddSnapshotImportService
 {
-    private readonly MkddDbContext _db;
+    private readonly IDbContextFactory<MkddDbContext>? _dbFactory;
+    private readonly MkddDbContext? _db;
 
     public MkddSnapshotImportService(MkddDbContext db)
     {
         _db = db;
+    }
+
+    public MkddSnapshotImportService(
+        IDbContextFactory<MkddDbContext> dbFactory)
+    {
+        _dbFactory = dbFactory;
     }
 
     public async Task<SnapshotImportResult> ImportAsync(
@@ -43,21 +50,26 @@ public sealed class MkddSnapshotImportService
             return Failed(ex.Message);
         }
 
+        await using var factoryDb = _db is null
+            ? await _dbFactory!.CreateDbContextAsync(cancellationToken)
+            : null;
+        var db = _db ?? factoryDb!;
+
         IDbContextTransaction? transaction = null;
 
         try
         {
             transaction =
-                await _db.Database.BeginTransactionAsync(cancellationToken);
+                await db.Database.BeginTransactionAsync(cancellationToken);
 
-            var course = await _db.Courses
+            var course = await db.Courses
                 .SingleOrDefaultAsync(
                     x => x.Name == normalizedCourseName,
                     cancellationToken);
 
             if (course is not null)
             {
-                var existingSnapshot = await _db.Snapshots
+                var existingSnapshot = await db.Snapshots
                     .SingleOrDefaultAsync(
                         x => x.CourseId == course.Id &&
                              x.RankingDate == rankingDate,
@@ -81,14 +93,14 @@ public sealed class MkddSnapshotImportService
                     Name = normalizedCourseName
                 };
 
-                _db.Courses.Add(course);
+                db.Courses.Add(course);
             }
 
             var sitePlayerIds = performances
                 .Select(x => x.SitePlayerId)
                 .ToArray();
 
-            var existingPlayers = await _db.Players
+            var existingPlayers = await db.Players
                 .Where(x => sitePlayerIds.Contains(x.SitePlayerId))
                 .ToListAsync(cancellationToken);
 
@@ -109,7 +121,7 @@ public sealed class MkddSnapshotImportService
                     };
 
                     playerBySiteId.Add(player.SitePlayerId, player);
-                    _db.Players.Add(player);
+                    db.Players.Add(player);
                 }
                 else
                 {
@@ -144,9 +156,9 @@ public sealed class MkddSnapshotImportService
                 });
             }
 
-            _db.Snapshots.Add(snapshot);
+            db.Snapshots.Add(snapshot);
 
-            await _db.SaveChangesAsync(cancellationToken);
+            await db.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
 
             return new SnapshotImportResult(
@@ -169,17 +181,8 @@ public sealed class MkddSnapshotImportService
                 }
             }
 
-            _db.ChangeTracker.Clear();
-
             return Failed(
                 $"L'import a échoué : {GetInnermostMessage(ex)}");
-        }
-        finally
-        {
-            if (transaction is not null)
-            {
-                await transaction.DisposeAsync();
-            }
         }
     }
 
