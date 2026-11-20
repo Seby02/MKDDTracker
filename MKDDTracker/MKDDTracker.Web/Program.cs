@@ -2,6 +2,7 @@ using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Services.Dashboard;
 using MKDDTracker.Scraper.Services.EvolutionService;
+using MKDDTracker.Scraper.Services.HistoricalImport;
 using MKDDTracker.Scraper.Services.SnapshotService;
 using MKDDTracker.Web.Components;
 
@@ -21,6 +22,12 @@ var databasePath = MkddDatabasePaths.RealDatabasePath;
 builder.Services.AddDbContextFactory<MkddDbContext>(options =>
     options.UseSqlite($"Data Source={databasePath}"));
 
+MkddTimeTypePlausibilityOptions timeTypePlausibilityOptions = builder.Configuration
+    .GetSection("HistoricalImport:TimeTypePlausibility")
+    .Get<MkddTimeTypePlausibilityOptions>() ?? new();
+timeTypePlausibilityOptions.Validate();
+builder.Services.AddSingleton(timeTypePlausibilityOptions);
+
 builder.Services.AddSingleton<MkddDatabaseBackupService>();
 builder.Services.AddSingleton<MkddDatabaseSchemaInspector>();
 builder.Services.AddScoped<MkddDatabaseInitializer>();
@@ -29,6 +36,7 @@ builder.Services.AddScoped<MkddSnapshotComparisonService>();
 builder.Services.AddScoped<MkddPlayerEvolutionService>();
 builder.Services.AddScoped<MkddEvolutionReportService>();
 builder.Services.AddScoped<MkddSnapshotImportService>();
+builder.Services.AddScoped<MkddHistoricalModernImportService>();
 builder.Services.AddScoped<MkddHistoricalRankingService>();
   builder.Services.AddScoped<MkddHistoricalRankingComparisonService>();
   builder.Services.AddScoped<MkddHistoricalRankingSelectionService>();

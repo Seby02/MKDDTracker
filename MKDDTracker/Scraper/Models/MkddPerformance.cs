@@ -15,5 +15,7 @@ namespace MKDDTracker.Scraper.Models
     TimeSpan Time,
     string Standard,
     DateOnly RecordDate,
-    string? VideoUrl);
+    string? VideoUrl,
+    string? TimeType = null,
+    int? Frequency = null);
 }

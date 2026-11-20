@@ -2,17 +2,23 @@
 @rendermode InteractiveServer
 
 @using Microsoft.AspNetCore.Components.Forms
+@using MKDDTracker.Scraper.Models
+@using MKDDTracker.Scraper.Parsing
+@using MKDDTracker.Scraper.Services.HistoricalImport
 @using MKDDTracker.Scraper.Services.SnapshotService
 
-@inject MkddSnapshotImportService ImportService
+@inject MkddHistoricalModernImportService ModernImportService
+@inject MkddSnapshotImportService SnapshotImportService
 
 <PageTitle>Importer un classement - MKDD Tracker</PageTitle>
 
-<h1>Importer un classement</h1>
+<h1>Importer des PR historiques</h1>
 
 <p class="text-muted">
-    Importe un fichier HTML de classement Mario Kart Double Dash
-    pour enregistrer un nouveau snapshot dans SQLite.
+    Analyse le HTML avec le parseur existant et ajoute directement à l’historique
+    les premiers records et les améliorations. Les classements identiques ou moins
+    bons ne créent pas d’événement. Le type doit être ThreeLap ou Flap ; il n’est
+    jamais déduit du format ou de la durée du chrono. Une fréquence absente reste inconnue.
 </p>
 
 <div class="card">
@@ -27,7 +33,17 @@
         </div>
 
         <div class="mb-3">
-            <label class="form-label">Date du classement</label>
+            <label class="form-label">Type de chrono</label>
+
+            <InputSelect class="form-select" @bind-Value="selectedTimeType">
+                <option value="">Sélectionner un type si absent de la source</option>
+                <option value="ThreeLap">ThreeLap</option>
+                <option value="Flap">Flap</option>
+            </InputSelect>
+        </div>
+
+        <div class="mb-3">
+            <label class="form-label">Date d’observation (repli seulement)</label>
 
             <InputDate class="form-control"
                        @bind-Value="rankingDate" />
@@ -43,149 +59,360 @@
 
         @if (!string.IsNullOrWhiteSpace(selectedFileName))
         {
-            <p class="text-muted">
-                Fichier sélectionné :
-                <strong>@selectedFileName</strong>
-            </p>
+            <div class="alert alert-info" role="status">
+                <div><strong>Source HTML :</strong> @selectedFileName</div>
+                <div><strong>Circuit :</strong> @(string.IsNullOrWhiteSpace(courseName) ? "non renseigné" : courseName)</div>
+                <div><strong>Type choisi/source :</strong> @TimeTypeContext</div>
+                <div><strong>Fréquence détectée :</strong> @FrequencyContext</div>
+            </div>
         }
 
+        <button class="btn btn-outline-primary me-2"
+                @onclick="AnalyzeModernAsync"
+                disabled="@(!CanAnalyzeModern || isImporting)">
+            Analyser sans écrire
+        </button>
         <button class="btn btn-primary"
-                @onclick="ImportAsync"
-                disabled="@isImporting">
-
-            @(isImporting ? "Importation..." : "Importer le snapshot")
-
+                @onclick="ImportModernAsync"
+                disabled="@(!CanImportModern || isImporting)">
+            @(isImporting ? "Importation..." : "Importer les PR historiques")
         </button>
 
     </div>
 </div>
 
-@if (!string.IsNullOrWhiteSpace(errorMessage))
+@if (!string.IsNullOrWhiteSpace(modernErrorMessage))
 {
     <div class="alert alert-danger mt-3">
-        @errorMessage
+        @modernErrorMessage
     </div>
 }
 
-@if (!string.IsNullOrWhiteSpace(successMessage))
+@if (modernResult is not null)
 {
-    <div class="alert alert-success mt-3">
-        @successMessage
+    <div class="card mt-3">
+        <div class="card-body">
+            <h2 class="h5">Résultat de l’import historique moderne</h2>
+            <ul class="mb-0">
+                <li>Performances analysées : @modernResult.PerformancesAnalyzed</li>
+                <li>Nouveaux PR : @modernResult.FirstPrsDetected</li>
+                <li>Améliorations : @modernResult.ImprovementsDetected</li>
+                <li>Chronos identiques : @modernResult.IdenticalTimesIgnored</li>
+                <li>Chronos moins bons : @modernResult.SlowerTimesIgnored</li>
+                <li>Événements déjà existants : @modernResult.ExistingEvents</li>
+                <li>TimeTypeValidation : @modernResult.TimeTypeValidation</li>
+                @if (!string.IsNullOrWhiteSpace(modernResult.TimeTypeValidationReason))
+                {
+                    <li>Raison : @modernResult.TimeTypeValidationReason</li>
+                }
+                <li>Erreurs/rejets : @modernResult.Errors.Count</li>
+            </ul>
+        </div>
     </div>
 }
 
-@if (!string.IsNullOrWhiteSpace(informationMessage))
-{
-    <div class="alert alert-info mt-3">
-        @informationMessage
+<details class="card mt-4">
+    <summary class="card-header">Legacy / Snapshot</summary>
+    <div class="card-body">
+        <p class="text-muted">
+            Ancien import conservé temporairement : il écrit un Snapshot et des
+            MkddPerformanceEntity. Utilise-le uniquement pour le flux legacy.
+        </p>
+        <button class="btn btn-outline-secondary"
+                @onclick="ImportSnapshotAsync"
+                disabled="@isImporting">
+            @(isImporting ? "Importation..." : "Importer le Snapshot legacy")
+        </button>
+
+        @if (!string.IsNullOrWhiteSpace(snapshotErrorMessage))
+        {
+            <div class="alert alert-danger mt-3">@snapshotErrorMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(snapshotSuccessMessage))
+        {
+            <div class="alert alert-success mt-3">@snapshotSuccessMessage</div>
+        }
+        @if (!string.IsNullOrWhiteSpace(snapshotInformationMessage))
+        {
+            <div class="alert alert-info mt-3">@snapshotInformationMessage</div>
+        }
     </div>
-}
+</details>
 
 @code {
     private string courseName = "";
+    private string selectedTimeType = "";
     private DateTime rankingDate = DateTime.Today;
 
     private IBrowserFile? selectedFile;
     private string? selectedFileName;
+    private IReadOnlyList<MkddPerformance>? parsedPerformances;
 
     private bool isImporting;
+    private string? modernErrorMessage;
+    private MkddHistoricalModernImportResult? modernResult;
+    private string? snapshotErrorMessage;
+    private string? snapshotSuccessMessage;
+    private string? snapshotInformationMessage;
 
-    private string? errorMessage;
-    private string? successMessage;
-    private string? informationMessage;
+    private bool CanAnalyzeModern => selectedFile is not null && parsedPerformances is not null;
 
-    private void OnFileSelected(InputFileChangeEventArgs e)
+    private bool CanImportModern
     {
-        selectedFile = e.File;
-        selectedFileName = selectedFile.Name;
-
-        errorMessage = null;
-        successMessage = null;
-        informationMessage = null;
+        get
+        {
+            IReadOnlyList<MkddPerformance>? performances = parsedPerformances;
+            return CanAnalyzeModern &&
+                   !string.IsNullOrWhiteSpace(courseName) &&
+                   performances is { Count: > 0 } &&
+                   performances.All(performance =>
+                       IsValidTimeType(performance.TimeType) ||
+                       (string.IsNullOrWhiteSpace(performance.TimeType) && IsValidTimeType(selectedTimeType)));
+        }
     }
 
-    private async Task ImportAsync()
+    private string TimeTypeContext
     {
-        if (isImporting)
-            return;
-
-        errorMessage = null;
-        successMessage = null;
-        informationMessage = null;
-
-        if (string.IsNullOrWhiteSpace(courseName))
+        get
         {
-            errorMessage = "Indique le nom du circuit.";
+            string selected = IsValidTimeType(selectedTimeType)
+                ? selectedTimeType
+                : "aucun";
+            string[] sourceTypes = parsedPerformances?
+                .Select(performance => performance.TimeType)
+                .OfType<string>()
+                .Where(type => !string.IsNullOrWhiteSpace(type))
+                .Distinct(StringComparer.Ordinal)
+                .ToArray() ?? [];
+            string source = sourceTypes.Length == 0 ? "absent" : string.Join(", ", sourceTypes);
+            return $"sélection : {selected} ; source : {source}";
+        }
+    }
+
+    private string FrequencyContext
+    {
+        get
+        {
+            if (parsedPerformances is null || parsedPerformances.Count == 0)
+                return "inconnue";
+
+            int[] frequencies = parsedPerformances
+                .Where(performance => performance.Frequency.HasValue)
+                .Select(performance => performance.Frequency.GetValueOrDefault())
+                .Distinct()
+                .Order()
+                .ToArray();
+            bool containsUnknown = parsedPerformances.Any(performance => !performance.Frequency.HasValue);
+            if (frequencies.Length == 0)
+                return "inconnue";
+
+            string summary = string.Join(" / ", frequencies.Select(frequency => $"{frequency} Hz"));
+            return containsUnknown ? $"{summary} (certaines inconnues)" : summary;
+        }
+    }
+
+    private async Task OnFileSelected(InputFileChangeEventArgs e)
+    {
+        IBrowserFile file = e.File;
+        selectedFile = file;
+        selectedFileName = file.Name;
+        parsedPerformances = null;
+        modernErrorMessage = null;
+        modernResult = null;
+        ClearSnapshotMessages();
+
+        if (!file.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase) &&
+            !file.Name.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+        {
+            modernErrorMessage = "Le fichier doit être au format HTML.";
             return;
         }
-
-        if (selectedFile is null)
-        {
-            errorMessage = "Sélectionne un fichier HTML.";
-            return;
-        }
-
-        if (!selectedFile.Name.EndsWith(".html",
-                StringComparison.OrdinalIgnoreCase) &&
-            !selectedFile.Name.EndsWith(".htm",
-                StringComparison.OrdinalIgnoreCase))
-        {
-            errorMessage = "Le fichier doit être au format HTML.";
-            return;
-        }
-
-        isImporting = true;
 
         try
         {
-            const long maxFileSize = 5 * 1024 * 1024;
-
-            await using var stream =
-                selectedFile.OpenReadStream(maxFileSize);
-
-            using var reader = new StreamReader(stream);
-
-            var html = await reader.ReadToEndAsync();
-            var selectedRankingDate = DateOnly.FromDateTime(rankingDate);
-
-            var result = await ImportService.ImportAsync(
-                courseName,
-                html,
-                selectedRankingDate);
-
-            switch (result.Status)
-            {
-                case SnapshotImportStatus.Created:
-                    successMessage =
-                        $"{result.ImportedPerformances} performances importées " +
-                        $"pour {courseName.Trim()} au {rankingDate:dd/MM/yyyy}.";
-                    break;
-
-                case SnapshotImportStatus.AlreadyExists:
-                    informationMessage =
-                        $"Un classement existe déjà pour {courseName.Trim()} " +
-                        $"au {rankingDate:dd/MM/yyyy}.";
-                    break;
-
-                case SnapshotImportStatus.Replaced:
-                    successMessage =
-                        $"Le classement de {courseName.Trim()} " +
-                        $"au {rankingDate:dd/MM/yyyy} a été remplacé : " +
-                        $"{result.ImportedPerformances} performances importées.";
-                    break;
-
-                case SnapshotImportStatus.Failed:
-                    errorMessage = result.Error ?? "L'import a échoué.";
-                    break;
-            }
+            string html = await ReadHtmlAsync(file);
+            parsedPerformances = new MkddCoursePageParser().Parse(html);
         }
         catch (Exception ex)
         {
-            errorMessage = ex.Message;
+            modernErrorMessage = ex.Message;
+        }
+    }
+
+    private async Task AnalyzeModernAsync()
+    {
+        if (isImporting || !CanAnalyzeModern)
+            return;
+
+        modernErrorMessage = null;
+        modernResult = null;
+        ClearSnapshotMessages();
+
+        if (!ValidateInput() || parsedPerformances is null)
+            return;
+
+        isImporting = true;
+        try
+        {
+            DateTimeOffset observedAt = GetObservationDate();
+            modernResult = await ModernImportService.AnalyzeAsync(
+                courseName,
+                parsedPerformances,
+                observedAt,
+                IsValidTimeType(selectedTimeType) ? selectedTimeType : null);
+            if (modernResult.Errors.Count > 0)
+                modernErrorMessage = string.Join(" ", modernResult.Errors);
+        }
+        catch (Exception ex)
+        {
+            modernErrorMessage = ex.Message;
         }
         finally
         {
             isImporting = false;
         }
+    }
+
+    private async Task ImportModernAsync()
+    {
+        if (isImporting || !CanImportModern)
+            return;
+
+        modernErrorMessage = null;
+        modernResult = null;
+        ClearSnapshotMessages();
+
+        if (!ValidateInput() || parsedPerformances is null)
+            return;
+
+        isImporting = true;
+        try
+        {
+            modernResult = await ModernImportService.ImportAsync(
+                courseName,
+                parsedPerformances,
+                GetObservationDate(),
+                IsValidTimeType(selectedTimeType) ? selectedTimeType : null);
+
+            if (modernResult.Errors.Count > 0)
+                modernErrorMessage = string.Join(" ", modernResult.Errors);
+        }
+        catch (Exception ex)
+        {
+            modernErrorMessage = ex.Message;
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private async Task ImportSnapshotAsync()
+    {
+        if (isImporting)
+            return;
+
+        ClearSnapshotMessages();
+        modernErrorMessage = null;
+        modernResult = null;
+
+        if (!ValidateInput())
+            return;
+
+        isImporting = true;
+        try
+        {
+            string html = await ReadSelectedFileAsync();
+            SnapshotImportResult result = await SnapshotImportService.ImportAsync(
+                courseName,
+                html,
+                DateOnly.FromDateTime(rankingDate));
+
+            switch (result.Status)
+            {
+                case SnapshotImportStatus.Created:
+                    snapshotSuccessMessage =
+                        $"{result.ImportedPerformances} performances importées " +
+                        $"pour {courseName.Trim()} au {rankingDate:dd/MM/yyyy}.";
+                    break;
+                case SnapshotImportStatus.AlreadyExists:
+                    snapshotInformationMessage =
+                        $"Un classement existe déjà pour {courseName.Trim()} " +
+                        $"au {rankingDate:dd/MM/yyyy}.";
+                    break;
+                case SnapshotImportStatus.Replaced:
+                    snapshotSuccessMessage =
+                        $"Le classement de {courseName.Trim()} au {rankingDate:dd/MM/yyyy} " +
+                        $"a été remplacé : {result.ImportedPerformances} performances importées.";
+                    break;
+                case SnapshotImportStatus.Failed:
+                    snapshotErrorMessage = result.Error ?? "L'import Snapshot a échoué.";
+                    break;
+            }
+        }
+        catch (Exception ex)
+        {
+            snapshotErrorMessage = ex.Message;
+        }
+        finally
+        {
+            isImporting = false;
+        }
+    }
+
+    private bool ValidateInput()
+    {
+        if (string.IsNullOrWhiteSpace(courseName))
+        {
+            modernErrorMessage = "Indique le nom du circuit.";
+            snapshotErrorMessage = modernErrorMessage;
+            return false;
+        }
+
+        if (selectedFile is null)
+        {
+            modernErrorMessage = "Sélectionne un fichier HTML.";
+            snapshotErrorMessage = modernErrorMessage;
+            return false;
+        }
+
+        if (!selectedFile.Name.EndsWith(".html", StringComparison.OrdinalIgnoreCase) &&
+            !selectedFile.Name.EndsWith(".htm", StringComparison.OrdinalIgnoreCase))
+        {
+            modernErrorMessage = "Le fichier doit être au format HTML.";
+            snapshotErrorMessage = modernErrorMessage;
+            return false;
+        }
+
+        return true;
+    }
+
+    private async Task<string> ReadSelectedFileAsync()
+    {
+        if (selectedFile is null)
+            throw new InvalidOperationException("Sélectionne un fichier HTML.");
+
+        return await ReadHtmlAsync(selectedFile);
+    }
+
+    private static async Task<string> ReadHtmlAsync(IBrowserFile file)
+    {
+        const long maxFileSize = 5 * 1024 * 1024;
+        await using var stream = file.OpenReadStream(maxFileSize);
+        using var reader = new StreamReader(stream);
+        return await reader.ReadToEndAsync();
+    }
+
+    private DateTimeOffset GetObservationDate() => new(
+        DateOnly.FromDateTime(rankingDate).ToDateTime(new TimeOnly(12, 0)),
+        TimeSpan.Zero);
+
+    private static bool IsValidTimeType(string? value) => value is "ThreeLap" or "Flap";
+
+    private void ClearSnapshotMessages()
+    {
+        snapshotErrorMessage = null;
+        snapshotSuccessMessage = null;
+        snapshotInformationMessage = null;
     }
 }

@@ -1,7 +1,6 @@
 ﻿using System.Security.Cryptography;
 using System.Text;
 using System.Text.Json;
-using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Data.Entities;
@@ -638,29 +637,13 @@ public sealed class MkddHistoricalImportService
     private static string NormalizePlayerName(
         string? value)
     {
-        return NormalizeText(value)
-            .Replace("’", "'")
-            .Replace("‘", "'");
+        return HistoricalPlayerNameNormalizer.NormalizePlayerName(value);
     }
 
     private static string NormalizeText(
         string? value)
     {
-        if (string.IsNullOrWhiteSpace(value))
-            return string.Empty;
-
-        string normalized =
-            value
-                .Trim()
-                .Normalize(
-                    NormalizationForm.FormKC);
-
-        normalized = Regex.Replace(
-            normalized,
-            @"\s+",
-            " ");
-
-        return normalized.ToLowerInvariant();
+        return HistoricalPlayerNameNormalizer.NormalizeText(value);
     }
 
     private static string? SerializeStringList(

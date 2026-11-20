@@ -1,6 +1,8 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Infrastructure;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Parsing;
+using MKDDTracker.Scraper.Models;
 using MKDDTracker.Scraper.Services;
 using MKDDTracker.Scraper.Services.EvolutionService;
 using MKDDTracker.Scraper.Services.SnapshotService;
@@ -66,6 +68,22 @@ if (args.Contains(
 }
 
 if (args.Contains(
+    "--dry-run-modern-history-import",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await RunModernHistoryImportAsync(dryRun: true, args);
+    return;
+}
+
+if (args.Contains(
+    "--import-modern-history",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await RunModernHistoryImportAsync(dryRun: false, args);
+    return;
+}
+
+if (args.Contains(
     "--analyze-historical-import",
     StringComparer.OrdinalIgnoreCase))
 {
@@ -111,6 +129,142 @@ static async Task RunSnapshotHistoryMigrationAsync(bool dryRun)
     MkddSnapshotHistoryMigrationResult result = await service.ImportAsync(progress);
     PrintSnapshotMigrationResult(result);
     Console.WriteLine($"Événements importés : {result.PrEventsImported:N0}");
+}
+
+static async Task RunModernHistoryImportAsync(bool dryRun, string[] arguments)
+{
+    string samplePath = Path.Combine(
+        AppContext.BaseDirectory,
+        "Samples",
+        "luigi-circuit.html");
+    string databasePath = MkddDatabasePaths.RealDatabasePath;
+
+    if (!File.Exists(samplePath))
+    {
+        Console.Error.WriteLine($"Fichier HTML introuvable : {samplePath}");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    if (!File.Exists(databasePath))
+    {
+        Console.Error.WriteLine($"Base introuvable : {databasePath}");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    IReadOnlyList<MkddPerformance> performances = new MkddCoursePageParser()
+        .Parse(await File.ReadAllTextAsync(samplePath));
+    string courseName = "Luigi Circuit";
+    string? selectedTimeType = GetOptionValue(arguments, "--time-type");
+    var dbOptions = new DbContextOptionsBuilder<MkddDbContext>()
+        .UseSqlite($"Data Source={databasePath}")
+        .Options;
+    var dbFactory = new PooledDbContextFactory<MkddDbContext>(dbOptions);
+    var service = new MkddHistoricalModernImportService(dbFactory);
+
+    Console.WriteLine(dryRun
+        ? "=== DRY-RUN IMPORT HISTORIQUE MODERNE ==="
+        : "=== IMPORT HISTORIQUE MODERNE ===");
+    Console.WriteLine($"HTML   : {samplePath}");
+    Console.WriteLine($"Circuit: {courseName}");
+    Console.WriteLine($"Base   : {databasePath}");
+    string[] sourceTimeTypes = performances
+        .Select(performance => performance.TimeType)
+        .OfType<string>()
+        .Where(timeType => !string.IsNullOrWhiteSpace(timeType))
+        .Distinct(StringComparer.Ordinal)
+        .ToArray();
+    Console.WriteLine($"Type source : {(sourceTimeTypes.Length == 0 ? "absent" : string.Join(", ", sourceTimeTypes))}");
+    Console.WriteLine($"Type choisi : {(string.IsNullOrWhiteSpace(selectedTimeType) ? "aucun" : selectedTimeType)}");
+    Console.WriteLine("Si le type manque dans la source, préciser --time-type ThreeLap ou --time-type Flap.");
+    int[] detectedFrequencies = performances
+        .Where(performance => performance.Frequency.HasValue)
+        .Select(performance => performance.Frequency.GetValueOrDefault())
+        .Distinct()
+        .Order()
+        .ToArray();
+    bool hasUnknownFrequency = performances.Any(performance => !performance.Frequency.HasValue);
+    string frequencySummary = detectedFrequencies.Length == 0
+        ? "inconnue"
+        : string.Join(" / ", detectedFrequencies.Select(frequency => $"{frequency} Hz")) +
+          (hasUnknownFrequency ? " (certaines inconnues)" : string.Empty);
+    Console.WriteLine($"Fréquence : {frequencySummary}");
+
+    if (dryRun)
+    {
+        MkddHistoricalModernImportResult result = await service.AnalyzeAsync(
+            courseName,
+            performances,
+            fallbackTimeType: selectedTimeType);
+        PrintModernHistoryImportResult(result);
+        if (result.Errors.Count > 0)
+            Environment.ExitCode = 1;
+        return;
+    }
+
+    MkddHistoricalModernImportResult plan = await service.AnalyzeAsync(
+        courseName,
+        performances,
+        fallbackTimeType: selectedTimeType);
+    PrintModernHistoryImportResult(plan);
+    if (plan.Errors.Count > 0)
+    {
+        Console.Error.WriteLine("Import impossible : le dry-run contient des rejets.");
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    Console.WriteLine("Cette commande écrit dans la base réelle dans une transaction.");
+    Console.WriteLine("Tapez exactement IMPORTER pour continuer :");
+    if (!string.Equals(Console.ReadLine(), "IMPORTER", StringComparison.Ordinal))
+    {
+        Console.WriteLine("Import annulé.");
+        return;
+    }
+
+    MkddHistoricalModernImportResult imported = await service.ImportAsync(
+        courseName,
+        performances,
+        fallbackTimeType: selectedTimeType);
+    PrintModernHistoryImportResult(imported);
+    Console.WriteLine($"Événements importés : {imported.EventsImported:N0}");
+    if (!imported.ImportCompleted)
+        Environment.ExitCode = 1;
+}
+
+static string? GetOptionValue(string[] arguments, string optionName)
+{
+    int optionIndex = Array.FindIndex(
+        arguments,
+        argument => string.Equals(argument, optionName, StringComparison.OrdinalIgnoreCase));
+    if (optionIndex < 0 || optionIndex + 1 >= arguments.Length)
+        return null;
+
+    return arguments[optionIndex + 1];
+}
+
+static void PrintModernHistoryImportResult(
+    MkddHistoricalModernImportResult result)
+{
+    Console.WriteLine();
+    Console.WriteLine($"Performances analysées       : {result.PerformancesAnalyzed:N0}");
+    Console.WriteLine($"Séries analysées             : {result.SeriesAnalyzed:N0}");
+    Console.WriteLine($"Alias existants              : {result.ExistingAliases:N0}");
+    Console.WriteLine($"Alias à créer                 : {result.AliasesToCreate:N0}");
+    Console.WriteLine($"Premiers PR détectés         : {result.FirstPrsDetected:N0}");
+    Console.WriteLine($"Améliorations détectées      : {result.ImprovementsDetected:N0}");
+    Console.WriteLine($"Chronos identiques ignorés   : {result.IdenticalTimesIgnored:N0}");
+    Console.WriteLine($"Chronos plus lents ignorés   : {result.SlowerTimesIgnored:N0}");
+    Console.WriteLine($"Événements déjà existants   : {result.ExistingEvents:N0}");
+    Console.WriteLine($"Événements à créer           : {result.EventsToCreate:N0}");
+    Console.WriteLine($"TimeTypeValidation           : {result.TimeTypeValidation}");
+    if (!string.IsNullOrWhiteSpace(result.TimeTypeValidationReason))
+        Console.WriteLine($"Raison de validation         : {result.TimeTypeValidationReason}");
+    Console.WriteLine($"Erreurs/rejets               : {result.Errors.Count:N0}");
+
+    foreach (string error in result.Errors)
+        Console.WriteLine($"  - {error}");
 }
 
 static async Task RunPre2003DateCorrectionAsync(bool dryRun)
