@@ -1,17 +1,31 @@
+using System.Globalization;
+using System.Security.Cryptography;
+using System.Text;
+using System.Text.RegularExpressions;
 using Microsoft.EntityFrameworkCore;
 using MKDDTracker.Scraper.Data.Database;
 using MKDDTracker.Scraper.Data.Entities;
 using MKDDTracker.Scraper.Models;
-using MKDDTracker.Scraper.Services.Ranking;
 
 namespace MKDDTracker.Scraper.Services;
 
 /// <summary>
-/// Creates an explicit, synthetic demonstration history.
-/// Call this service only with the dedicated demo database.
+/// Creates an explicit and deterministic demonstration history.
+///
+/// The demonstration database uses HistoricalPerformances as its
+/// source of truth and does not create legacy snapshots.
 /// </summary>
 public sealed class MkddDemoDataSeeder
 {
+    private const string SourceSystem =
+        "MKDDTrackerDemo";
+
+    private const string DateSource =
+        "DemoSeed";
+
+    private const string TimeType =
+        "ThreeLap";
+
     private static readonly DateOnly[] DemoDates =
     [
         new(2026, 9, 1),
@@ -22,7 +36,8 @@ public sealed class MkddDemoDataSeeder
 
     private readonly MkddDbContext _db;
 
-    public MkddDemoDataSeeder(MkddDbContext db)
+    public MkddDemoDataSeeder(
+        MkddDbContext db)
     {
         _db = db;
     }
@@ -31,12 +46,20 @@ public sealed class MkddDemoDataSeeder
         string courseName,
         string mattildeName,
         string enzoName,
-        IReadOnlyList<MkddPerformance> sourcePerformances)
+        IReadOnlyList<MkddPerformance> sourcePerformances,
+        CancellationToken cancellationToken = default)
     {
-        ArgumentException.ThrowIfNullOrWhiteSpace(courseName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(mattildeName);
-        ArgumentException.ThrowIfNullOrWhiteSpace(enzoName);
-        ArgumentNullException.ThrowIfNull(sourcePerformances);
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            courseName);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            mattildeName);
+
+        ArgumentException.ThrowIfNullOrWhiteSpace(
+            enzoName);
+
+        ArgumentNullException.ThrowIfNull(
+            sourcePerformances);
 
         if (sourcePerformances.Count == 0)
         {
@@ -45,193 +68,580 @@ public sealed class MkddDemoDataSeeder
                 nameof(sourcePerformances));
         }
 
-        var course = await GetOrCreateCourseAsync(courseName);
-        var playersBySiteId = await GetOrCreatePlayersAsync(sourcePerformances);
+        MkddCourse course =
+            await GetOrCreateCourseAsync(
+                courseName,
+                cancellationToken);
 
-        var mattilde = FindPlayer(playersBySiteId, mattildeName);
-        var enzo = FindPlayer(playersBySiteId, enzoName);
-        var timeOverrides = CreateTimeOverrides(mattilde.Id, enzo.Id);
+        Dictionary<int, MkddPlayer> playersBySiteId =
+            await GetOrCreatePlayersAsync(
+                sourcePerformances,
+                cancellationToken);
 
-        foreach (var date in DemoDates)
+        MkddPlayer mattilde =
+            FindPlayer(
+                playersBySiteId,
+                mattildeName);
+
+        MkddPlayer enzo =
+            FindPlayer(
+                playersBySiteId,
+                enzoName);
+
+        Dictionary<int, MkddHistoricalPlayerAlias>
+            aliasesByPlayerId =
+                await GetOrCreateAliasesAsync(
+                    playersBySiteId.Values,
+                    cancellationToken);
+
+        Dictionary<(int PlayerId, DateOnly Date), TimeSpan>
+            timeOverrides =
+                CreateTimeOverrides(
+                    mattilde.Id,
+                    enzo.Id);
+
+        List<DemoHistoricalEvent> eventPlans =
+            BuildEventPlans(
+                course,
+                sourcePerformances,
+                playersBySiteId,
+                timeOverrides);
+
+        HashSet<string> existingKeys =
+            (await _db.HistoricalPerformances
+                .AsNoTracking()
+                .Where(performance =>
+                    performance.SourceSystem ==
+                        SourceSystem)
+                .Select(performance =>
+                    performance.ExternalKey)
+                .ToListAsync(
+                    cancellationToken))
+                .ToHashSet(
+                    StringComparer.Ordinal);
+
+        foreach (DemoHistoricalEvent eventPlan
+                 in eventPlans)
         {
-            var exists = await _db.Snapshots.AnyAsync(x =>
-                x.CourseId == course.Id &&
-                x.RankingDate == date);
-
-            if (exists)
+            if (existingKeys.Contains(
+                    eventPlan.ExternalKey))
             {
                 continue;
             }
 
-            var snapshot = new MkddSnapshot
-            {
-                CourseId = course.Id,
-                RankingDate = date,
-                CapturedAt = date.ToDateTime(new TimeOnly(12, 0))
-            };
+            MkddHistoricalPlayerAlias alias =
+                aliasesByPlayerId[
+                    eventPlan.PlayerId];
 
-            var temporaryPerformances = sourcePerformances
-                .Where(x => playersBySiteId.ContainsKey(x.SitePlayerId))
-                .Select(x =>
+            _db.HistoricalPerformances.Add(
+                new MkddHistoricalPerformance
                 {
-                    var player = playersBySiteId[x.SitePlayerId];
+                    ExternalKey =
+                        eventPlan.ExternalKey,
 
-                    return new DemoPerformance(
-                        player.Id,
-                        GetBestTimeSoFar(
-                            player.Id,
-                            date,
-                            timeOverrides,
-                            x.Time),
-                        x.Standard,
-                        x.RecordDate,
-                        x.VideoUrl);
-                })
-                .ToList();
+                    HistoricalPlayerAliasId =
+                        alias.Id,
 
-            var rankedPerformances = MkddRankingCalculator.CalculateRanks(
-                temporaryPerformances,
-                x => x.Time);
+                    CourseId =
+                        course.Id,
 
-            foreach (var rankedPerformance in rankedPerformances)
-            {
-                var performance = rankedPerformance.Item;
+                    TimeType =
+                        TimeType,
 
-                snapshot.Performances.Add(
-                    new MkddPerformanceEntity
-                    {
-                        PlayerId = performance.PlayerId,
-                        Rank = rankedPerformance.Rank,
-                        Time = performance.Time,
-                        Standard = performance.Standard,
-                        RecordDate = performance.RecordDate,
-                        VideoUrl = performance.VideoUrl
-                    });
-            }
+                    Frequency =
+                        null,
 
-            _db.Snapshots.Add(snapshot);
+                    Time =
+                        eventPlan.Time,
+
+                    FirstSeenAt =
+                        eventPlan.FirstSeenAt,
+
+                    DateSource =
+                        DateSource,
+
+                    SequenceNumber =
+                        eventPlan.SequenceNumber,
+
+                    PreviousTime =
+                        eventPlan.PreviousTime,
+
+                    Improvement =
+                        eventPlan.Improvement,
+
+                    OccurrenceCount =
+                        1,
+
+                    SourceSystem =
+                        SourceSystem,
+
+                    ImportStatus =
+                        "Approved"
+                });
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(
+            cancellationToken);
     }
 
-    private async Task<MkddCourse> GetOrCreateCourseAsync(string courseName)
+    private List<DemoHistoricalEvent> BuildEventPlans(
+        MkddCourse course,
+        IReadOnlyList<MkddPerformance> sourcePerformances,
+        IReadOnlyDictionary<int, MkddPlayer>
+            playersBySiteId,
+        IReadOnlyDictionary<
+            (int PlayerId, DateOnly Date),
+            TimeSpan> timeOverrides)
     {
-        var course = await _db.Courses
-            .SingleOrDefaultAsync(x => x.Name == courseName);
+        var events =
+            new List<DemoHistoricalEvent>();
+
+        foreach (MkddPerformance source
+                 in sourcePerformances)
+        {
+            if (!playersBySiteId.TryGetValue(
+                    source.SitePlayerId,
+                    out MkddPlayer? player))
+            {
+                continue;
+            }
+
+            TimeSpan? previousBest = null;
+            int sequenceNumber = 0;
+
+            foreach (DateOnly date in DemoDates)
+            {
+                TimeSpan candidateTime =
+                    GetBestTimeSoFar(
+                        player.Id,
+                        date,
+                        timeOverrides,
+                        source.Time);
+
+                //
+                // The demo history is event-based:
+                //
+                // - first known time;
+                // - then strict improvements only.
+                //
+
+                if (previousBest is not null &&
+                    candidateTime >=
+                        previousBest.Value)
+                {
+                    continue;
+                }
+
+                sequenceNumber++;
+
+                DateTimeOffset firstSeenAt =
+                    new(
+                        date.ToDateTime(
+                            new TimeOnly(12, 0)),
+                        TimeSpan.Zero);
+
+                TimeSpan? improvement =
+                    previousBest is null
+                        ? null
+                        : previousBest.Value -
+                          candidateTime;
+
+                string externalKey =
+                    BuildExternalKey(
+                        player.Id,
+                        course.Id,
+                        candidateTime,
+                        firstSeenAt);
+
+                events.Add(
+                    new DemoHistoricalEvent(
+                        player.Id,
+                        candidateTime,
+                        firstSeenAt,
+                        sequenceNumber,
+                        previousBest,
+                        improvement,
+                        externalKey));
+
+                previousBest =
+                    candidateTime;
+            }
+        }
+
+        return events;
+    }
+
+    private async Task<MkddCourse>
+        GetOrCreateCourseAsync(
+            string courseName,
+            CancellationToken cancellationToken)
+    {
+        MkddCourse? course =
+            await _db.Courses
+                .SingleOrDefaultAsync(
+                    course =>
+                        course.Name == courseName,
+                    cancellationToken);
 
         if (course is not null)
         {
             return course;
         }
 
-        course = new MkddCourse
-        {
-            Name = courseName
-        };
+        course =
+            new MkddCourse
+            {
+                Name =
+                    courseName
+            };
 
-        _db.Courses.Add(course);
-        await _db.SaveChangesAsync();
+        _db.Courses.Add(
+            course);
+
+        await _db.SaveChangesAsync(
+            cancellationToken);
 
         return course;
     }
 
-    private async Task<Dictionary<int, MkddPlayer>> GetOrCreatePlayersAsync(
-        IReadOnlyList<MkddPerformance> sourcePerformances)
+    private async Task<Dictionary<int, MkddPlayer>>
+        GetOrCreatePlayersAsync(
+            IReadOnlyList<MkddPerformance>
+                sourcePerformances,
+            CancellationToken cancellationToken)
     {
-        var sourceBySitePlayerId = sourcePerformances
-            .GroupBy(x => x.SitePlayerId)
-            .ToDictionary(x => x.Key, x => x.First());
+        Dictionary<int, MkddPerformance>
+            sourceBySitePlayerId =
+                sourcePerformances
+                    .GroupBy(performance =>
+                        performance.SitePlayerId)
+                    .ToDictionary(
+                        group =>
+                            group.Key,
+                        group =>
+                            group.First());
 
-        var sitePlayerIds = sourceBySitePlayerId.Keys.ToList();
-        var existingPlayers = await _db.Players
-            .Where(x => sitePlayerIds.Contains(x.SitePlayerId))
-            .ToListAsync();
+        List<int> sitePlayerIds =
+            sourceBySitePlayerId.Keys
+                .ToList();
 
-        var playersBySiteId = existingPlayers
-            .ToDictionary(x => x.SitePlayerId);
+        List<MkddPlayer> existingPlayers =
+            await _db.Players
+                .Where(player =>
+                    sitePlayerIds.Contains(
+                        player.SitePlayerId))
+                .ToListAsync(
+                    cancellationToken);
 
-        foreach (var source in sourceBySitePlayerId.Values)
+        Dictionary<int, MkddPlayer>
+            playersBySiteId =
+                existingPlayers
+                    .ToDictionary(player =>
+                        player.SitePlayerId);
+
+        foreach (MkddPerformance source
+                 in sourceBySitePlayerId.Values)
         {
-            if (playersBySiteId.ContainsKey(source.SitePlayerId))
+            if (playersBySiteId.ContainsKey(
+                    source.SitePlayerId))
             {
                 continue;
             }
 
-            var player = new MkddPlayer
-            {
-                SitePlayerId = source.SitePlayerId,
-                Name = source.PlayerName,
-                Country = source.Country
-            };
+            var player =
+                new MkddPlayer
+                {
+                    SitePlayerId =
+                        source.SitePlayerId,
 
-            _db.Players.Add(player);
-            playersBySiteId.Add(player.SitePlayerId, player);
+                    Name =
+                        source.PlayerName,
+
+                    Country =
+                        source.Country
+                };
+
+            _db.Players.Add(
+                player);
+
+            playersBySiteId.Add(
+                player.SitePlayerId,
+                player);
         }
 
-        await _db.SaveChangesAsync();
+        await _db.SaveChangesAsync(
+            cancellationToken);
 
         return playersBySiteId;
     }
 
-    private static MkddPlayer FindPlayer(
-        IReadOnlyDictionary<int, MkddPlayer> playersBySiteId,
-        string playerName) =>
-        playersBySiteId.Values.SingleOrDefault(x =>
-            string.Equals(
-                x.Name,
-                playerName,
-                StringComparison.OrdinalIgnoreCase))
-        ?? throw new InvalidOperationException(
-            $"Demo player '{playerName}' is absent from the source ranking.");
+    private async Task<
+        Dictionary<int, MkddHistoricalPlayerAlias>>
+        GetOrCreateAliasesAsync(
+            IEnumerable<MkddPlayer> players,
+            CancellationToken cancellationToken)
+    {
+        List<MkddPlayer> playerList =
+            players.ToList();
 
-    private static Dictionary<(int PlayerId, DateOnly Date), TimeSpan>
-        CreateTimeOverrides(int mattildeId, int enzoId) =>
+        List<int> playerIds =
+            playerList
+                .Select(player =>
+                    player.Id)
+                .ToList();
+
+        List<MkddHistoricalPlayerAlias>
+            existingAliases =
+                await _db.HistoricalPlayerAliases
+                    .Where(alias =>
+                        alias.SourceSystem ==
+                            SourceSystem
+                        &&
+                        alias.PlayerId != null
+                        &&
+                        playerIds.Contains(
+                            alias.PlayerId.Value))
+                    .ToListAsync(
+                        cancellationToken);
+
+        Dictionary<int, MkddHistoricalPlayerAlias>
+            aliasesByPlayerId =
+                existingAliases
+                    .Where(alias =>
+                        alias.PlayerId != null)
+                    .ToDictionary(
+                        alias =>
+                            alias.PlayerId!.Value);
+
+        foreach (MkddPlayer player
+                 in playerList)
+        {
+            if (aliasesByPlayerId.ContainsKey(
+                    player.Id))
+            {
+                continue;
+            }
+
+            var alias =
+                new MkddHistoricalPlayerAlias
+                {
+                    SourceSystem =
+                        SourceSystem,
+
+                    ExternalName =
+                        player.Name,
+
+                    NormalizedExternalName =
+                        NormalizeName(
+                            player.Name),
+
+                    PlayerId =
+                        player.Id,
+
+                    Country =
+                        player.Country,
+
+                    Confidence =
+                        100,
+
+                    ResolutionStatus =
+                        "Matched"
+                };
+
+            _db.HistoricalPlayerAliases.Add(
+                alias);
+
+            aliasesByPlayerId.Add(
+                player.Id,
+                alias);
+        }
+
+        await _db.SaveChangesAsync(
+            cancellationToken);
+
+        return aliasesByPlayerId;
+    }
+
+    private static MkddPlayer FindPlayer(
+        IReadOnlyDictionary<int, MkddPlayer>
+            playersBySiteId,
+        string playerName) =>
+        playersBySiteId.Values
+            .SingleOrDefault(player =>
+                string.Equals(
+                    player.Name,
+                    playerName,
+                    StringComparison.OrdinalIgnoreCase))
+        ?? throw new InvalidOperationException(
+            $"Demo player '{playerName}' is absent " +
+            "from the source ranking.");
+
+    private static Dictionary<
+        (int PlayerId, DateOnly Date),
+        TimeSpan>
+        CreateTimeOverrides(
+            int mattildeId,
+            int enzoId) =>
         new()
         {
-            [(mattildeId, new DateOnly(2026, 9, 1))] =
-                TimeSpan.FromMilliseconds(74_642),
-            [(mattildeId, new DateOnly(2026, 9, 8))] =
-                TimeSpan.FromMilliseconds(74_510),
-            [(mattildeId, new DateOnly(2026, 9, 15))] =
-                TimeSpan.FromMilliseconds(74_401),
-            [(mattildeId, new DateOnly(2026, 9, 22))] =
-                TimeSpan.FromMilliseconds(74_210),
-            [(enzoId, new DateOnly(2026, 9, 1))] =
-                TimeSpan.FromMilliseconds(74_500),
-            [(enzoId, new DateOnly(2026, 9, 8))] =
-                TimeSpan.FromMilliseconds(74_500),
-            [(enzoId, new DateOnly(2026, 9, 15))] =
-                TimeSpan.FromMilliseconds(74_200),
-            [(enzoId, new DateOnly(2026, 9, 22))] =
-                TimeSpan.FromMilliseconds(74_200)
+            [
+                (
+                    mattildeId,
+                    new DateOnly(2026, 9, 1)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_642),
+
+            [
+                (
+                    mattildeId,
+                    new DateOnly(2026, 9, 8)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_510),
+
+            [
+                (
+                    mattildeId,
+                    new DateOnly(2026, 9, 15)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_401),
+
+            [
+                (
+                    mattildeId,
+                    new DateOnly(2026, 9, 22)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_210),
+
+            [
+                (
+                    enzoId,
+                    new DateOnly(2026, 9, 1)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_500),
+
+            [
+                (
+                    enzoId,
+                    new DateOnly(2026, 9, 8)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_500),
+
+            [
+                (
+                    enzoId,
+                    new DateOnly(2026, 9, 15)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_200),
+
+            [
+                (
+                    enzoId,
+                    new DateOnly(2026, 9, 22)
+                )
+            ] =
+                TimeSpan.FromMilliseconds(
+                    74_200)
         };
 
     private static TimeSpan GetBestTimeSoFar(
         int playerId,
         DateOnly date,
-        IReadOnlyDictionary<(int PlayerId, DateOnly Date), TimeSpan> overrides,
+        IReadOnlyDictionary<
+            (int PlayerId, DateOnly Date),
+            TimeSpan> overrides,
         TimeSpan originalTime)
     {
-        var bestTime = originalTime;
+        TimeSpan bestTime =
+            originalTime;
 
-        foreach (var entry in overrides)
+        foreach (KeyValuePair<
+                     (int PlayerId, DateOnly Date),
+                     TimeSpan> entry
+                 in overrides)
         {
-            if (entry.Key.PlayerId == playerId &&
-                entry.Key.Date <= date &&
-                entry.Value < bestTime)
+            if (entry.Key.PlayerId ==
+                    playerId
+                &&
+                entry.Key.Date <=
+                    date
+                &&
+                entry.Value <
+                    bestTime)
             {
-                bestTime = entry.Value;
+                bestTime =
+                    entry.Value;
             }
         }
 
         return bestTime;
     }
 
-    private sealed record DemoPerformance(
+    private static string BuildExternalKey(
+        int playerId,
+        int courseId,
+        TimeSpan time,
+        DateTimeOffset firstSeenAt)
+    {
+        string rawKey =
+            string.Join(
+                "|",
+                SourceSystem,
+                playerId.ToString(
+                    CultureInfo.InvariantCulture),
+                courseId.ToString(
+                    CultureInfo.InvariantCulture),
+                TimeType,
+                "UNKNOWN",
+                ((long)time.TotalMilliseconds)
+                    .ToString(
+                        CultureInfo.InvariantCulture),
+                firstSeenAt.UtcDateTime.Ticks
+                    .ToString(
+                        CultureInfo.InvariantCulture),
+                DateSource);
+
+        return Convert.ToHexString(
+            SHA256.HashData(
+                Encoding.UTF8.GetBytes(
+                    rawKey)));
+    }
+
+    private static string NormalizeName(
+        string value)
+    {
+        string normalized =
+            value
+                .Trim()
+                .Normalize(
+                    NormalizationForm.FormKC);
+
+        return Regex.Replace(
+                normalized,
+                @"\s+",
+                " ")
+            .ToLowerInvariant();
+    }
+
+    private sealed record DemoHistoricalEvent(
         int PlayerId,
         TimeSpan Time,
-        string Standard,
-        DateOnly RecordDate,
-        string? VideoUrl);
+        DateTimeOffset FirstSeenAt,
+        int SequenceNumber,
+        TimeSpan? PreviousTime,
+        TimeSpan? Improvement,
+        string ExternalKey);
 }
