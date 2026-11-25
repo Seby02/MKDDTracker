@@ -8,11 +8,27 @@ public sealed class MkddDbContextFactory
 {
     public MkddDbContext CreateDbContext(string[] args)
     {
-        MkddDatabasePaths
-            .EnsureApplicationDataDirectoryExists();
+        string? explicitDatabasePath =
+            GetOptionValue(
+                args,
+                "--database");
 
-        string databasePath =
-            MkddDatabasePaths.RealDatabasePath;
+        string databasePath;
+
+        if (string.IsNullOrWhiteSpace(explicitDatabasePath))
+        {
+            MkddDatabasePaths
+                .EnsureApplicationDataDirectoryExists();
+
+            databasePath =
+                MkddDatabasePaths.RealDatabasePath;
+        }
+        else
+        {
+            databasePath =
+                Path.GetFullPath(
+                    explicitDatabasePath);
+        }
 
         var options =
             new DbContextOptionsBuilder<MkddDbContext>()
@@ -21,5 +37,42 @@ public sealed class MkddDbContextFactory
                 .Options;
 
         return new MkddDbContext(options);
+    }
+
+    private static string? GetOptionValue(
+        string[] args,
+        string optionName)
+    {
+        for (var index = 0;
+             index < args.Length;
+             index++)
+        {
+            if (!string.Equals(
+                    args[index],
+                    optionName,
+                    StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            if (index + 1 >= args.Length)
+            {
+                throw new ArgumentException(
+                    $"L'option {optionName} nécessite une valeur.");
+            }
+
+            string value =
+                args[index + 1];
+
+            if (string.IsNullOrWhiteSpace(value))
+            {
+                throw new ArgumentException(
+                    $"L'option {optionName} nécessite une valeur.");
+            }
+
+            return value;
+        }
+
+        return null;
     }
 }

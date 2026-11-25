@@ -14,7 +14,7 @@ if (args.Contains(
     "--dry-run-fix-pre2003-dates",
     StringComparer.OrdinalIgnoreCase))
 {
-    await RunPre2003DateCorrectionAsync(dryRun: true);
+    await RunPre2003DateCorrectionAsync(dryRun: true, args);
     return;
 }
 
@@ -22,7 +22,15 @@ if (args.Contains(
     "--fix-pre2003-dates",
     StringComparer.OrdinalIgnoreCase))
 {
-    await RunPre2003DateCorrectionAsync(dryRun: false);
+    await RunPre2003DateCorrectionAsync(dryRun: false, args);
+    return;
+}
+
+if (args.Contains(
+    "--diagnose-database-structure",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await DiagnoseDatabaseStructureAsync(args);
     return;
 }
 
@@ -30,7 +38,7 @@ if (args.Contains(
     "--diagnose-history-years",
     StringComparer.OrdinalIgnoreCase))
 {
-    await DiagnoseHistoryYearsAsync();
+    await DiagnoseHistoryYearsAsync(args);
     return;
 }
 
@@ -54,7 +62,7 @@ if (args.Contains(
     "--analyze-historical-import",
     StringComparer.OrdinalIgnoreCase))
 {
-    await AnalyzeHistoricalImportAsync();
+    await AnalyzeHistoricalImportAsync(args);
     return;
 }
 
@@ -64,7 +72,7 @@ static async Task RunModernHistoryImportAsync(bool dryRun, string[] arguments)
         AppContext.BaseDirectory,
         "Samples",
         "luigi-circuit.html");
-    string databasePath = MkddDatabasePaths.RealDatabasePath;
+    string databasePath = ResolveDatabasePath(arguments);
 
     if (!File.Exists(samplePath))
     {
@@ -160,15 +168,53 @@ static async Task RunModernHistoryImportAsync(bool dryRun, string[] arguments)
         Environment.ExitCode = 1;
 }
 
-static string? GetOptionValue(string[] arguments, string optionName)
+static string? GetOptionValue(
+    string[] arguments,
+    string optionName)
 {
-    int optionIndex = Array.FindIndex(
-        arguments,
-        argument => string.Equals(argument, optionName, StringComparison.OrdinalIgnoreCase));
-    if (optionIndex < 0 || optionIndex + 1 >= arguments.Length)
-        return null;
+    for (var index = 0;
+         index < arguments.Length;
+         index++)
+    {
+        if (!string.Equals(
+                arguments[index],
+                optionName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
 
-    return arguments[optionIndex + 1];
+        if (index + 1 >= arguments.Length ||
+            string.IsNullOrWhiteSpace(arguments[index + 1]))
+        {
+            throw new ArgumentException(
+                $"L'option {optionName} nécessite une valeur.");
+        }
+
+        return arguments[index + 1];
+    }
+
+    return null;
+}
+
+static string ResolveDatabasePath(
+    string[] arguments)
+{
+    string? explicitDatabasePath =
+        GetOptionValue(
+            arguments,
+            "--database");
+
+    if (string.IsNullOrWhiteSpace(explicitDatabasePath))
+    {
+        MkddDatabasePaths
+            .EnsureApplicationDataDirectoryExists();
+
+        return MkddDatabasePaths.RealDatabasePath;
+    }
+
+    return Path.GetFullPath(
+        explicitDatabasePath);
 }
 
 static void PrintModernHistoryImportResult(
@@ -194,9 +240,9 @@ static void PrintModernHistoryImportResult(
         Console.WriteLine($"  - {error}");
 }
 
-static async Task RunPre2003DateCorrectionAsync(bool dryRun)
+static async Task RunPre2003DateCorrectionAsync(bool dryRun, string[] arguments)
 {
-    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
+    string databasePath = ResolveDatabasePath(arguments);
     if (!File.Exists(databasePath))
     {
         Console.WriteLine($"Base introuvable : {databasePath}");
@@ -239,6 +285,135 @@ static async Task RunPre2003DateCorrectionAsync(bool dryRun)
     }
 }
 
+static async Task DiagnoseDatabaseStructureAsync(
+    string[] arguments)
+{
+    string? explicitDatabasePath =
+        GetOptionValue(
+            arguments,
+            "--database");
+
+    if (string.IsNullOrWhiteSpace(explicitDatabasePath))
+    {
+        Console.Error.WriteLine(
+            "L'option --database est obligatoire.");
+
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    string databasePath =
+        Path.GetFullPath(
+            explicitDatabasePath);
+
+    if (!File.Exists(databasePath))
+    {
+        Console.Error.WriteLine(
+            $"Base introuvable : {databasePath}");
+
+        Environment.ExitCode = 1;
+        return;
+    }
+
+    Console.WriteLine(
+        "=== DIAGNOSTIC STRUCTURE BASE ===");
+
+    Console.WriteLine(
+        $"Base : {databasePath}");
+
+    Console.WriteLine(
+        "Mode lecture seule.");
+
+    Console.WriteLine();
+
+    await using var connection =
+        new Microsoft.Data.Sqlite.SqliteConnection(
+            $"Data Source={databasePath}");
+
+    await connection.OpenAsync();
+
+    string[] tables =
+    [
+        "Courses",
+        "Players",
+        "HistoricalPlayerAliases",
+        "HistoricalPerformances",
+        "HistoricalPerformanceSources",
+        "Snapshots",
+        "Performances"
+    ];
+
+    foreach (string table in tables)
+    {
+        await using var existsCommand =
+            connection.CreateCommand();
+
+        existsCommand.CommandText =
+            """
+            SELECT COUNT(*)
+            FROM sqlite_master
+            WHERE type = 'table'
+              AND name = $name;
+            """;
+
+        existsCommand.Parameters.AddWithValue(
+            "$name",
+            table);
+
+        bool exists =
+            Convert.ToInt64(
+                await existsCommand
+                    .ExecuteScalarAsync()) == 1L;
+
+        if (!exists)
+        {
+            Console.WriteLine(
+                $"{table} : ABSENTE");
+
+            continue;
+        }
+
+        await using var countCommand =
+            connection.CreateCommand();
+
+        countCommand.CommandText =
+            $"SELECT COUNT(*) FROM \"{table}\";";
+
+        long count =
+            Convert.ToInt64(
+                await countCommand
+                    .ExecuteScalarAsync());
+
+        Console.WriteLine(
+            $"{table} : {count:N0}");
+    }
+
+    Console.WriteLine();
+
+    await using var migrationCommand =
+        connection.CreateCommand();
+
+    migrationCommand.CommandText =
+        """
+        SELECT MigrationId
+        FROM __EFMigrationsHistory
+        ORDER BY MigrationId;
+        """;
+
+    await using var reader =
+        await migrationCommand
+            .ExecuteReaderAsync();
+
+    Console.WriteLine(
+        "Migrations appliquées :");
+
+    while (await reader.ReadAsync())
+    {
+        Console.WriteLine(
+            $" - {reader.GetString(0)}");
+    }
+}
+
 static void PrintPre2003DateCorrectionPlan(Pre2003DateCorrectionPlan plan)
 {
     Console.WriteLine($"Performances concernées : {plan.PerformanceCount:N0}");
@@ -269,9 +444,10 @@ static string FormatDiagnosticDate(DateOnly? date) =>
 static string FormatDiagnosticDateTime(DateTimeOffset? date) =>
     date?.ToString("O", CultureInfo.InvariantCulture) ?? "aucune";
 
-static async Task DiagnoseHistoryYearsAsync()
+static async Task DiagnoseHistoryYearsAsync(
+    string[] arguments)
 {
-    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
+    string databasePath = ResolveDatabasePath(arguments);
     if (!File.Exists(databasePath))
     {
         Console.WriteLine($"Base introuvable : {databasePath}");
@@ -437,7 +613,7 @@ if (args.Contains(
     "--dry-run-historical-import",
     StringComparer.OrdinalIgnoreCase))
 {
-    await DryRunHistoricalImportAsync();
+    await DryRunHistoricalImportAsync(args);
     return;
 }
 
@@ -445,7 +621,7 @@ if (args.Contains(
     "--import-historical",
     StringComparer.OrdinalIgnoreCase))
 {
-    await ImportHistoricalAsync();
+    await ImportHistoricalAsync(args);
     return;
 }
 
@@ -513,7 +689,7 @@ await demoSeeder.SeedAsync(
 Console.WriteLine($"Base de démonstration prête : {demoDatabasePath}");
 Console.WriteLine("La base réelle mkddtracker.db n'a pas été modifiée.");
 
-static async Task DryRunHistoricalImportAsync()
+static async Task DryRunHistoricalImportAsync(string[] arguments)
 {
     Console.WriteLine(
         "=== DRY-RUN IMPORT HISTORIQUE YAHOO ===");
@@ -543,7 +719,8 @@ static async Task DryRunHistoricalImportAsync()
     }
 
     string databasePath =
-        MkddDatabasePaths.RealDatabasePath;
+        ResolveDatabasePath(arguments);
+
 
     if (!File.Exists(databasePath))
     {
@@ -659,7 +836,7 @@ static async Task DryRunHistoricalImportAsync()
     }
 }
 
-static async Task AnalyzeHistoricalImportAsync()
+static async Task AnalyzeHistoricalImportAsync(string[] arguments)
 {
     Console.WriteLine(
         "=== ANALYSE IMPORT HISTORIQUE YAHOO ===");
@@ -706,8 +883,7 @@ static async Task AnalyzeHistoricalImportAsync()
     // la même configuration que MkddDbContextFactory.
     //
 
-    string databasePath =
-        MkddDatabasePaths.GetRealDatabasePath();
+    string databasePath = ResolveDatabasePath(arguments);
 
     Console.WriteLine(
         $"Import : {importFile}");
@@ -847,7 +1023,7 @@ static void WriteJson<T>(
         json);
 }
 
-static async Task ImportHistoricalAsync()
+static async Task ImportHistoricalAsync(string[] arguments)
 {
     Console.WriteLine(
         "=== IMPORT HISTORIQUE YAHOO ===");
@@ -877,7 +1053,7 @@ static async Task ImportHistoricalAsync()
     }
 
     string databasePath =
-        MkddDatabasePaths.RealDatabasePath;
+        ResolveDatabasePath(arguments);
 
     if (!File.Exists(databasePath))
     {
@@ -896,7 +1072,10 @@ static async Task ImportHistoricalAsync()
     Console.WriteLine();
 
     Console.WriteLine(
-        "ATTENTION : cette commande écrit dans la base réelle.");
+        $"Cette commande écrit dans la base suivante : {databasePath}");
+
+    Console.WriteLine(
+        "L'opération est exécutée dans une transaction.");
 
     Console.WriteLine(
         "Tape IMPORTER pour continuer :");
@@ -995,4 +1174,6 @@ static async Task ImportHistoricalAsync()
                 $"  - {error}");
         }
     }
+
+
 }
