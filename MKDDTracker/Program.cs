@@ -52,6 +52,14 @@ if (diagnosticIndex >= 0)
 }
 
 if (args.Contains(
+    "--check-snapshot-retirement",
+    StringComparer.OrdinalIgnoreCase))
+{
+    await CheckSnapshotRetirementAsync();
+    return;
+}
+
+if (args.Contains(
     "--dry-run-snapshot-history-migration",
     StringComparer.OrdinalIgnoreCase))
 {
@@ -89,6 +97,114 @@ if (args.Contains(
 {
     await AnalyzeHistoricalImportAsync();
     return;
+}
+
+static async Task CheckSnapshotRetirementAsync()
+{
+    Console.WriteLine(
+        "=== SNAPSHOT LEGACY RETIREMENT CHECK ===");
+
+    Console.WriteLine(
+        "Mode lecture seule : aucune donnée n'est modifiée.");
+
+    Console.WriteLine();
+
+    string databasePath =
+        MkddDatabasePaths.GetRealDatabasePath();
+
+    if (!File.Exists(databasePath))
+    {
+        Console.Error.WriteLine(
+            $"Base introuvable : {databasePath}");
+
+        Environment.ExitCode = 1;
+
+        return;
+    }
+
+    var options =
+        new DbContextOptionsBuilder<MkddDbContext>()
+            .UseSqlite(
+                $"Data Source={databasePath}")
+            .Options;
+
+    await using var db =
+        new MkddDbContext(options);
+
+    var service =
+        new MkddSnapshotRetirementCheckService(db);
+
+    MkddSnapshotRetirementCheckResult result =
+        await service.CheckAsync();
+
+    Console.WriteLine(
+        $"Base : {databasePath}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Snapshots legacy : " +
+        $"{result.SnapshotCount:N0}");
+
+    Console.WriteLine(
+        $"Performances legacy : " +
+        $"{result.LegacyPerformanceCount:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Performances snapshot analysées : " +
+        $"{result.SnapshotPerformancesAnalyzed:N0}");
+
+    Console.WriteLine(
+        $"Séries joueur/circuit analysées : " +
+        $"{result.PlayerCourseSeriesAnalyzed:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Alias modernes existants : " +
+        $"{result.ExistingModernAliases:N0}");
+
+    Console.WriteLine(
+        $"Alias modernes restant à créer : " +
+        $"{result.ModernAliasesToCreate:N0}");
+
+    Console.WriteLine();
+
+    Console.WriteLine(
+        $"Événements PR historiques existants : " +
+        $"{result.ExistingPrEvents:N0}");
+
+    Console.WriteLine(
+        $"Événements PR restant à migrer : " +
+        $"{result.PrEventsToCreate:N0}");
+
+    Console.WriteLine();
+
+    if (result.IsReadyForRetirement)
+    {
+        Console.ForegroundColor =
+            ConsoleColor.Green;
+
+        Console.WriteLine(
+            "STATUT : READY FOR RETIREMENT");
+    }
+    else
+    {
+        Console.ForegroundColor =
+            ConsoleColor.Yellow;
+
+        Console.WriteLine(
+            "STATUT : NOT READY");
+
+        Console.WriteLine();
+
+        Console.WriteLine(
+            "Le modèle Snapshot ne doit pas encore être retiré.");
+    }
+
+    Console.ResetColor();
 }
 
 static async Task RunSnapshotHistoryMigrationAsync(bool dryRun)
