@@ -15,7 +15,47 @@ builder.Services.AddRazorComponents()
 // La base réelle appartient à l'utilisateur. Elle est créée vide au premier
 // lancement et n'est jamais initialisée à partir d'une base de démonstration.
 MkddDatabasePaths.EnsureApplicationDataDirectoryExists();
-var databasePath = MkddDatabasePaths.RealDatabasePath;
+string? explicitDatabasePath =
+    GetOptionValue(
+        args,
+        "--database");
+
+var databasePath =
+    string.IsNullOrWhiteSpace(explicitDatabasePath)
+        ? MkddDatabasePaths.RealDatabasePath
+        : Path.GetFullPath(explicitDatabasePath);
+
+Console.WriteLine(
+    $"Base SQLite utilisée : {databasePath}");
+
+static string? GetOptionValue(
+    string[] arguments,
+    string optionName)
+{
+    for (var index = 0;
+         index < arguments.Length;
+         index++)
+    {
+        if (!string.Equals(
+                arguments[index],
+                optionName,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            continue;
+        }
+
+        if (index + 1 >= arguments.Length ||
+            string.IsNullOrWhiteSpace(arguments[index + 1]))
+        {
+            throw new ArgumentException(
+                $"L'option {optionName} nécessite une valeur.");
+        }
+
+        return arguments[index + 1];
+    }
+
+    return null;
+}
 
 builder.Services.AddMkddWebServices(builder.Configuration, databasePath);
 
