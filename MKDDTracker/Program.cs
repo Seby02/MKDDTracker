@@ -9,7 +9,6 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using MKDDTracker.Scraper.Services.HistoricalImport;
 using System.Globalization;
-using MKDDTracker.Scraper.Services.SnapshotService;
 
 if (args.Contains(
     "--dry-run-fix-pre2003-dates",
@@ -36,30 +35,6 @@ if (args.Contains(
 }
 
 if (args.Contains(
-    "--check-snapshot-retirement",
-    StringComparer.OrdinalIgnoreCase))
-{
-    await CheckSnapshotRetirementAsync(args);
-    return;
-}
-
-if (args.Contains(
-    "--dry-run-snapshot-history-migration",
-    StringComparer.OrdinalIgnoreCase))
-{
-    await RunSnapshotHistoryMigrationAsync(dryRun: true);
-    return;
-}
-
-if (args.Contains(
-    "--migrate-snapshot-history",
-    StringComparer.OrdinalIgnoreCase))
-{
-    await RunSnapshotHistoryMigrationAsync(dryRun: false);
-    return;
-}
-
-if (args.Contains(
     "--dry-run-modern-history-import",
     StringComparer.OrdinalIgnoreCase))
 {
@@ -81,163 +56,6 @@ if (args.Contains(
 {
     await AnalyzeHistoricalImportAsync();
     return;
-}
-
-static async Task CheckSnapshotRetirementAsync(string[] arguments)
-{
-    Console.WriteLine(
-        "=== SNAPSHOT LEGACY RETIREMENT CHECK ===");
-
-    Console.WriteLine(
-        "Mode lecture seule : aucune donnée n'est modifiée.");
-
-    Console.WriteLine();
-
-    string? explicitDatabasePath =
-        GetOptionValue(
-            arguments,
-            "--database");
-
-    string databasePath =
-        string.IsNullOrWhiteSpace(
-            explicitDatabasePath)
-            ? MkddDatabasePaths.GetRealDatabasePath()
-            : Path.GetFullPath(
-                explicitDatabasePath);
-
-    if (!File.Exists(databasePath))
-    {
-        Console.Error.WriteLine(
-            $"Base introuvable : {databasePath}");
-
-        Environment.ExitCode = 1;
-
-        return;
-    }
-
-    var options =
-        new DbContextOptionsBuilder<MkddDbContext>()
-            .UseSqlite(
-                $"Data Source={databasePath}")
-            .Options;
-
-    await using var db =
-        new MkddDbContext(options);
-
-    var service =
-        new MkddSnapshotRetirementCheckService(db);
-
-    MkddSnapshotRetirementCheckResult result =
-        await service.CheckAsync();
-
-    Console.WriteLine(
-        $"Base : {databasePath}");
-
-    Console.WriteLine();
-
-    Console.WriteLine(
-        $"Snapshots legacy : " +
-        $"{result.SnapshotCount:N0}");
-
-    Console.WriteLine(
-        $"Performances legacy : " +
-        $"{result.LegacyPerformanceCount:N0}");
-
-    Console.WriteLine();
-
-    Console.WriteLine(
-        $"Performances snapshot analysées : " +
-        $"{result.SnapshotPerformancesAnalyzed:N0}");
-
-    Console.WriteLine(
-        $"Séries joueur/circuit analysées : " +
-        $"{result.PlayerCourseSeriesAnalyzed:N0}");
-
-    Console.WriteLine();
-
-    Console.WriteLine(
-        $"Alias modernes existants : " +
-        $"{result.ExistingModernAliases:N0}");
-
-    Console.WriteLine(
-        $"Alias modernes restant à créer : " +
-        $"{result.ModernAliasesToCreate:N0}");
-
-    Console.WriteLine();
-
-    Console.WriteLine(
-        $"Événements PR historiques existants : " +
-        $"{result.ExistingPrEvents:N0}");
-
-    Console.WriteLine(
-        $"Événements PR restant à migrer : " +
-        $"{result.PrEventsToCreate:N0}");
-
-    Console.WriteLine();
-
-    if (result.IsReadyForRetirement)
-    {
-        Console.ForegroundColor =
-            ConsoleColor.Green;
-
-        Console.WriteLine(
-            "STATUT : READY FOR RETIREMENT");
-    }
-    else
-    {
-        Console.ForegroundColor =
-            ConsoleColor.Yellow;
-
-        Console.WriteLine(
-            "STATUT : NOT READY");
-
-        Console.WriteLine();
-
-        Console.WriteLine(
-            "Le modèle Snapshot ne doit pas encore être retiré.");
-    }
-
-    Console.ResetColor();
-}
-
-static async Task RunSnapshotHistoryMigrationAsync(bool dryRun)
-{
-    string databasePath = MkddDatabasePaths.GetRealDatabasePath();
-    if (!File.Exists(databasePath))
-    {
-        Console.WriteLine($"Base introuvable : {databasePath}");
-        return;
-    }
-
-    var options = new DbContextOptionsBuilder<MkddDbContext>()
-        .UseSqlite($"Data Source={databasePath}")
-        .Options;
-    await using var db = new MkddDbContext(options);
-    var service = new MkddSnapshotHistoryMigrationService(db);
-
-    if (dryRun)
-    {
-        Console.WriteLine("=== DRY-RUN MIGRATION SNAPSHOTS VERS HISTORIQUE ===");
-        PrintSnapshotMigrationResult(await service.AnalyzeAsync());
-        return;
-    }
-
-    Console.WriteLine("=== MIGRATION SNAPSHOTS VERS HISTORIQUE ===");
-    Console.WriteLine("Cette commande écrit dans la base réelle.");
-    Console.WriteLine("Tape MIGRER pour continuer :");
-    if (!string.Equals(Console.ReadLine(), "MIGRER", StringComparison.Ordinal))
-    {
-        Console.WriteLine("Migration annulée.");
-        return;
-    }
-
-    Action<MkddSnapshotHistoryMigrationProgress> progress = status =>
-        Console.WriteLine(
-            $"Progression : {status.ImportedEvents:N0}/{status.TotalEvents:N0} événements " +
-            $"({status.ProcessedSeries:N0}/{status.TotalSeries:N0} séries)");
-    MkddSnapshotHistoryMigrationResult result = await service.ImportAsync(progress);
-    PrintSnapshotMigrationResult(result);
-    Console.WriteLine($"Événements importés : {result.PrEventsImported:N0}");
 }
 
 static async Task RunModernHistoryImportAsync(bool dryRun, string[] arguments)
@@ -437,23 +255,6 @@ static void PrintPre2003DateCorrectionPlan(Pre2003DateCorrectionPlan plan)
             message.CorrectedFirstSeenAt.ToString("O", CultureInfo.InvariantCulture) +
             $" ({message.PerformanceCount:N0} performances, {message.SourceCount:N0} sources)");
     }
-}
-
-static void PrintSnapshotMigrationResult(MkddSnapshotHistoryMigrationResult result)
-{
-    Console.WriteLine();
-    Console.WriteLine($"Performances snapshot analysées : {result.SnapshotPerformancesAnalyzed:N0}");
-    Console.WriteLine($"Première RecordDate : {FormatMigrationDate(result.EarliestRecordDate)}");
-    Console.WriteLine($"Dernière RecordDate : {FormatMigrationDate(result.LatestRecordDate)}");
-    Console.WriteLine($"Première RankingDate : {FormatMigrationDate(result.EarliestRankingDate)}");
-    Console.WriteLine($"Dernière RankingDate : {FormatMigrationDate(result.LatestRankingDate)}");
-    Console.WriteLine($"Séries joueur/circuit analysées : {result.PlayerCourseSeriesAnalyzed:N0}");
-    Console.WriteLine($"Alias modernes existants : {result.ExistingModernAliases:N0}");
-    Console.WriteLine($"Alias modernes à créer : {result.ModernAliasesToCreate:N0}");
-    Console.WriteLine($"Événements PR existants : {result.ExistingPrEvents:N0}");
-    Console.WriteLine($"Événements PR à créer : {result.PrEventsToCreate:N0}");
-    Console.WriteLine($"Snapshots identiques ignorés : {result.IdenticalSnapshotsIgnored:N0}");
-    Console.WriteLine($"Chronos moins bons ignorés : {result.SlowerTimesIgnored:N0}");
 }
 
 static string FormatMigrationDate(DateOnly? date) =>

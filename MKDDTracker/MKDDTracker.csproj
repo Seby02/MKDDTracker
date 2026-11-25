@@ -34,6 +34,7 @@
 
   <ItemGroup>
     <Folder Include="Samples\" />
+    <Folder Include="Services\SnapshotService\" />
   </ItemGroup>
 
 </Project>
