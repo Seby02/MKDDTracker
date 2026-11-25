@@ -55,7 +55,7 @@ if (args.Contains(
     "--check-snapshot-retirement",
     StringComparer.OrdinalIgnoreCase))
 {
-    await CheckSnapshotRetirementAsync();
+    await CheckSnapshotRetirementAsync(args);
     return;
 }
 
@@ -99,7 +99,7 @@ if (args.Contains(
     return;
 }
 
-static async Task CheckSnapshotRetirementAsync()
+static async Task CheckSnapshotRetirementAsync(string[] arguments)
 {
     Console.WriteLine(
         "=== SNAPSHOT LEGACY RETIREMENT CHECK ===");
@@ -109,8 +109,17 @@ static async Task CheckSnapshotRetirementAsync()
 
     Console.WriteLine();
 
+    string? explicitDatabasePath =
+        GetOptionValue(
+            arguments,
+            "--database");
+
     string databasePath =
-        MkddDatabasePaths.GetRealDatabasePath();
+        string.IsNullOrWhiteSpace(
+            explicitDatabasePath)
+            ? MkddDatabasePaths.GetRealDatabasePath()
+            : Path.GetFullPath(
+                explicitDatabasePath);
 
     if (!File.Exists(databasePath))
     {
