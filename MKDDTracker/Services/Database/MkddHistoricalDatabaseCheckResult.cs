@@ -52,12 +52,6 @@ public sealed record HistoricalDatabaseIntegrityStatistics(
     long AliasesPointingToMissingPlayers,
     long UnresolvedAliasesWithoutPlayer);
 
-public sealed record LegacySnapshotDatabaseStatistics(
-    bool IsAvailable,
-    long SnapshotCount,
-    long PerformanceCount,
-    DateOnly? LastRankingDate);
-
 public sealed record MkddHistoricalDatabaseCheckResult(
     HistoricalDatabaseHealthStatus Status,
     bool DatabaseAccessible,
@@ -66,5 +60,4 @@ public sealed record MkddHistoricalDatabaseCheckResult(
     IReadOnlyList<string> Errors,
     IReadOnlyList<string> PendingMigrations,
     HistoricalDatabaseStatistics Historical,
-    HistoricalDatabaseIntegrityStatistics Integrity,
-    LegacySnapshotDatabaseStatistics Legacy);
+    HistoricalDatabaseIntegrityStatistics Integrity);

@@ -23,9 +23,6 @@ public sealed class MkddHistoricalDatabaseCheckServiceTests
         Assert.Equal(0, result.Historical.SourceCount);
         Assert.Empty(result.Errors);
         Assert.Empty(result.Warnings);
-        Assert.True(result.Legacy.IsAvailable);
-        Assert.Equal(0, result.Legacy.SnapshotCount);
-        Assert.Equal(0, result.Legacy.PerformanceCount);
     }
 
     [Fact]
@@ -59,9 +56,6 @@ public sealed class MkddHistoricalDatabaseCheckServiceTests
 
         Assert.Equal(HistoricalDatabaseHealthStatus.Healthy, result.Status);
         Assert.Empty(result.Warnings);
-        Assert.Equal(1, result.Legacy.SnapshotCount);
-        Assert.Equal(1, result.Legacy.PerformanceCount);
-        Assert.Equal(new DateOnly(2026, 9, 15), result.Legacy.LastRankingDate);
         Assert.Equal(0, result.Historical.HistoricalPerformanceCount);
     }
 

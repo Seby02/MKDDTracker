@@ -115,26 +115,7 @@ else
                 </ul>
             }
         </div>
-    </section>
-
-    <section class="card mb-4">
-        <div class="card-header"><h2 class="h5 mb-0">Legacy Snapshot</h2></div>
-        <div class="card-body">
-            <p class="text-muted">Système legacy conservé temporairement pour compatibilité et validation.</p>
-            @if (result.Legacy.IsAvailable)
-            {
-                <dl class="row mb-0">
-                    <dt class="col-sm-6">Snapshots</dt><dd class="col-sm-6">@result.Legacy.SnapshotCount</dd>
-                    <dt class="col-sm-6">Performances legacy</dt><dd class="col-sm-6">@result.Legacy.PerformanceCount</dd>
-                    <dt class="col-sm-6">Dernière RankingDate</dt><dd class="col-sm-6">@(result.Legacy.LastRankingDate?.ToString("dd/MM/yyyy") ?? "Aucune")</dd>
-                </dl>
-            }
-            else
-            {
-                <p class="mb-0">Tables Snapshot indisponibles ; cela n’affecte pas la santé de l’historique unifié.</p>
-            }
-        </div>
-    </section>
+    </section>    
 }
 
 @code {

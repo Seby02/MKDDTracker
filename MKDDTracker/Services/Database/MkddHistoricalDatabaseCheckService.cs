@@ -61,7 +61,6 @@ public sealed class MkddHistoricalDatabaseCheckService
                 pendingMigrations,
                 new HistoricalDatabaseStatistics(0, 0, 0, 0, 0, null, null, 0, 0, 0, 0, 0, 0, 0, 0),
                 new HistoricalDatabaseIntegrityStatistics(0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0),
-                new LegacySnapshotDatabaseStatistics(false, 0, 0, null),
                 databaseAccessible);
         }
 
@@ -192,12 +191,7 @@ public sealed class MkddHistoricalDatabaseCheckService
         if (performances is not null && aliases is not null && courseIds is not null && playerIds is not null)
         {
             integrity = CheckIntegrity(performances, aliases, courseIds, playerIds, checks, warnings, errors);
-        }
-
-        LegacySnapshotDatabaseStatistics legacy = await ReadLegacySnapshotStatisticsAsync(
-            db,
-            checks,
-            cancellationToken);
+        }       
 
         return CreateResult(
             checks,
@@ -206,7 +200,6 @@ public sealed class MkddHistoricalDatabaseCheckService
             pendingMigrations,
             historical,
             integrity,
-            legacy,
             databaseAccessible);
     }
 
@@ -404,40 +397,7 @@ public sealed class MkddHistoricalDatabaseCheckService
             performances.LongCount(performance => performance.Frequency == 50),
             performances.LongCount(performance => performance.Frequency == 60),
             performances.LongCount(performance => performance.Frequency is null));
-    }
-
-    private static async Task<LegacySnapshotDatabaseStatistics> ReadLegacySnapshotStatisticsAsync(
-        MkddDbContext db,
-        List<HistoricalDatabaseCheckItem> checks,
-        CancellationToken cancellationToken)
-    {
-        try
-        {
-            long snapshotCount = await db.Snapshots.AsNoTracking().LongCountAsync(cancellationToken);
-            long performanceCount = await db.Performances.AsNoTracking().LongCountAsync(cancellationToken);
-            List<DateOnly> rankingDates = await db.Snapshots
-                .AsNoTracking()
-                .Select(snapshot => snapshot.RankingDate)
-                .ToListAsync(cancellationToken);
-            checks.Add(new HistoricalDatabaseCheckItem(
-                "Legacy Snapshot",
-                DatabaseCheckState.Informational,
-                "Système legacy conservé temporairement pour compatibilité et validation."));
-            return new LegacySnapshotDatabaseStatistics(
-                true,
-                snapshotCount,
-                performanceCount,
-                rankingDates.Count == 0 ? null : rankingDates.Max());
-        }
-        catch (Exception exception) when (exception is not OperationCanceledException)
-        {
-            checks.Add(new HistoricalDatabaseCheckItem(
-                "Legacy Snapshot",
-                DatabaseCheckState.Informational,
-                $"Informations legacy indisponibles : {exception.Message}"));
-            return new LegacySnapshotDatabaseStatistics(false, 0, 0, null);
-        }
-    }
+    }   
 
     private static void AddIntegrityCheck(
         List<HistoricalDatabaseCheckItem> checks,
@@ -478,7 +438,6 @@ public sealed class MkddHistoricalDatabaseCheckService
         IReadOnlyList<string> pendingMigrations,
         HistoricalDatabaseStatistics historical,
         HistoricalDatabaseIntegrityStatistics integrity,
-        LegacySnapshotDatabaseStatistics legacy,
         bool databaseAccessible)
     {
         HistoricalDatabaseHealthStatus status = errors.Count > 0
@@ -495,8 +454,7 @@ public sealed class MkddHistoricalDatabaseCheckService
             errors,
             pendingMigrations,
             historical,
-            integrity,
-            legacy);
+            integrity);
     }
 
     private sealed record AliasDiagnostic(int Id, int? PlayerId, string ResolutionStatus);
