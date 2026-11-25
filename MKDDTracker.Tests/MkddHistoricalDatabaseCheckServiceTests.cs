@@ -23,41 +23,7 @@ public sealed class MkddHistoricalDatabaseCheckServiceTests
         Assert.Equal(0, result.Historical.SourceCount);
         Assert.Empty(result.Errors);
         Assert.Empty(result.Warnings);
-    }
-
-    [Fact]
-    public async Task CheckAsync_SnapshotDataDoesNotAffectHealthyHistoricalStatus()
-    {
-        await using var fixture = await TestDatabase.CreateMigratedAsync();
-        await using (var db = fixture.Factory.CreateDbContext())
-        {
-            var course = new MkddCourse { Name = "Luigi Circuit" };
-            var player = new MkddPlayer { SitePlayerId = 42, Name = "Legacy Player", Country = "FR" };
-            var snapshot = new MkddSnapshot
-            {
-                Course = course,
-                CapturedAt = new DateTime(2026, 9, 15, 12, 0, 0),
-                RankingDate = new DateOnly(2026, 9, 15)
-            };
-            snapshot.Performances.Add(new MkddPerformanceEntity
-            {
-                Player = player,
-                Rank = 1,
-                Time = TimeSpan.FromSeconds(75),
-                Standard = "God",
-                RecordDate = new DateOnly(2026, 9, 14)
-            });
-            db.Snapshots.Add(snapshot);
-            await db.SaveChangesAsync();
-        }
-
-        MkddHistoricalDatabaseCheckResult result = await new MkddHistoricalDatabaseCheckService(fixture.Factory)
-            .CheckAsync();
-
-        Assert.Equal(HistoricalDatabaseHealthStatus.Healthy, result.Status);
-        Assert.Empty(result.Warnings);
-        Assert.Equal(0, result.Historical.HistoricalPerformanceCount);
-    }
+    }    
 
     [Fact]
     public async Task CheckAsync_CountsHistoricalSourcesAndMetadataCategories()

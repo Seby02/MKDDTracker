@@ -52,17 +52,25 @@ public class MkddDatabaseInitializer
         }
 
         bool hasMigrationHistory;
-        bool hasExpectedSchema;
+        bool hasLegacySchema;
+        bool hasCurrentSchema;
 
         try
         {
             hasMigrationHistory =
-                await _schemaInspector.HasEfMigrationHistoryAsync(
+    await _schemaInspector.HasEfMigrationHistoryAsync(
+        db,
+        cancellationToken);
+
+            hasLegacySchema =
+                await _schemaInspector.HasLegacySchemaAsync(
                     db,
                     cancellationToken);
-            hasExpectedSchema = await _schemaInspector.HasLegacySchemaAsync(
-                db,
-                cancellationToken);
+
+            hasCurrentSchema =
+                await _schemaInspector.HasCurrentSchemaAsync(
+                    db,
+                    cancellationToken);
         }
         catch (Exception exception) when (
             exception is DbException or InvalidOperationException)
@@ -72,7 +80,7 @@ public class MkddDatabaseInitializer
                 exception);
         }
 
-        if (!hasExpectedSchema)
+        if (!hasLegacySchema && !hasCurrentSchema)
         {
             throw CreateUnknownSchemaException(fullDatabasePath);
         }

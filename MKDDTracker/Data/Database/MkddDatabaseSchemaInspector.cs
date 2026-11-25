@@ -25,6 +25,33 @@ public sealed class MkddDatabaseSchemaInspector
             ]
         };
 
+    private static readonly string[] CurrentSchemaTables =
+[
+    "Courses",
+    "Players",
+    "HistoricalPlayerAliases",
+    "HistoricalPerformances",
+    "HistoricalPerformanceSources"
+];
+
+    public async Task<bool> HasCurrentSchemaAsync(
+    MkddDbContext db,
+    CancellationToken cancellationToken = default)
+    {
+        foreach (string tableName in CurrentSchemaTables)
+        {
+            if (!await TableExistsAsync(
+                    db,
+                    tableName,
+                    cancellationToken))
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     public Task<bool> DatabaseExistsAsync(
         string databasePath,
         CancellationToken cancellationToken = default)

@@ -10,6 +10,5 @@ public sealed class MkddPlayer
 
     public string? Country { get; set; }
 
-    public ICollection<MkddPerformanceEntity> Performances { get; set; } = [];
     public ICollection<MkddHistoricalPlayerAlias> HistoricalAliases { get; set; } = [];
 }

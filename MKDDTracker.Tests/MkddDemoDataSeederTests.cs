@@ -33,15 +33,7 @@ public sealed class MkddDemoDataSeederTests
             "Luigi Circuit",
             "Mattilde F",
             "Enzo Vusur",
-            performances);
-
-        Assert.Equal(
-            0,
-            await db.Snapshots.CountAsync());
-
-        Assert.Equal(
-            0,
-            await db.Performances.CountAsync());
+            performances);        
 
         Assert.Equal(
             performances.Count,

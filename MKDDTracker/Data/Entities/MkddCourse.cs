@@ -6,7 +6,5 @@ public sealed class MkddCourse
 
     public required string Name { get; set; }
 
-    public ICollection<MkddSnapshot> Snapshots { get; set; } = [];
-
     public ICollection<MkddHistoricalPerformance> HistoricalPerformances { get; set; } = [];
 }

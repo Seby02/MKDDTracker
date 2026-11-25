@@ -14,8 +14,6 @@ namespace MKDDTracker.Scraper.Data.Database.Migrations
     {
         protected override void BuildModel(ModelBuilder modelBuilder)
         {
-
-
 #pragma warning disable 612, 618
             modelBuilder.HasAnnotation("ProductVersion", "9.0.20");
 
@@ -191,43 +189,6 @@ namespace MKDDTracker.Scraper.Data.Database.Migrations
                     b.ToTable("HistoricalPlayerAliases");
                 });
 
-            modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddPerformanceEntity", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("PlayerId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<int>("Rank")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateOnly>("RecordDate")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("SnapshotId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<string>("Standard")
-                        .HasColumnType("TEXT");
-
-                    b.Property<TimeSpan>("Time")
-                        .HasColumnType("TEXT");
-
-                    b.Property<string>("VideoUrl")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("PlayerId");
-
-                    b.HasIndex("SnapshotId", "PlayerId")
-                        .IsUnique();
-
-                    b.ToTable("Performances");
-                });
-
             modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddPlayer", b =>
                 {
                     b.Property<int>("Id")
@@ -250,29 +211,6 @@ namespace MKDDTracker.Scraper.Data.Database.Migrations
                         .IsUnique();
 
                     b.ToTable("Players");
-                });
-
-            modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddSnapshot", b =>
-                {
-                    b.Property<int>("Id")
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateTime>("CapturedAt")
-                        .HasColumnType("TEXT");
-
-                    b.Property<int>("CourseId")
-                        .HasColumnType("INTEGER");
-
-                    b.Property<DateOnly>("RankingDate")
-                        .HasColumnType("TEXT");
-
-                    b.HasKey("Id");
-
-                    b.HasIndex("CourseId", "RankingDate")
-                        .IsUnique();
-
-                    b.ToTable("Snapshots");
                 });
 
             modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddHistoricalPerformance", b =>
@@ -315,41 +253,9 @@ namespace MKDDTracker.Scraper.Data.Database.Migrations
                     b.Navigation("Player");
                 });
 
-            modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddPerformanceEntity", b =>
-                {
-                    b.HasOne("MKDDTracker.Scraper.Data.Entities.MkddPlayer", "Player")
-                        .WithMany("Performances")
-                        .HasForeignKey("PlayerId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.HasOne("MKDDTracker.Scraper.Data.Entities.MkddSnapshot", "Snapshot")
-                        .WithMany("Performances")
-                        .HasForeignKey("SnapshotId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Player");
-
-                    b.Navigation("Snapshot");
-                });
-
-            modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddSnapshot", b =>
-                {
-                    b.HasOne("MKDDTracker.Scraper.Data.Entities.MkddCourse", "Course")
-                        .WithMany("Snapshots")
-                        .HasForeignKey("CourseId")
-                        .OnDelete(DeleteBehavior.Cascade)
-                        .IsRequired();
-
-                    b.Navigation("Course");
-                });
-
             modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddCourse", b =>
                 {
                     b.Navigation("HistoricalPerformances");
-
-                    b.Navigation("Snapshots");
                 });
 
             modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddHistoricalPerformance", b =>
@@ -365,13 +271,6 @@ namespace MKDDTracker.Scraper.Data.Database.Migrations
             modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddPlayer", b =>
                 {
                     b.Navigation("HistoricalAliases");
-
-                    b.Navigation("Performances");
-                });
-
-            modelBuilder.Entity("MKDDTracker.Scraper.Data.Entities.MkddSnapshot", b =>
-                {
-                    b.Navigation("Performances");
                 });
 #pragma warning restore 612, 618
         }

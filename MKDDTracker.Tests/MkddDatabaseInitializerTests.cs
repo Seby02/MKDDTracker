@@ -51,59 +51,97 @@ public sealed class MkddDatabaseInitializerTests
     }
 
     [Fact]
-    public async Task InitializeAsync_LegacyDatabase_BaselinesAndPreservesData()
+    public async Task InitializeAsync_LegacyDatabase_BaselinesAndAppliesCurrentMigrations()
     {
-        var directory = DatabaseTestSupport.CreateTemporaryDirectory();
-        var databasePath = Path.Combine(directory, "mkddtracker.db");
+        var directory =
+            DatabaseTestSupport.CreateTemporaryDirectory();
+
+        var databasePath =
+            Path.Combine(
+                directory,
+                "mkddtracker.db");
 
         try
         {
-            await DatabaseTestSupport.CreateLegacyDatabaseAsync(databasePath);
+            await DatabaseTestSupport.CreateLegacyDatabaseAsync(
+                databasePath);
 
             await using var db =
-                DatabaseTestSupport.CreateContext(databasePath);
-            await DatabaseTestSupport.CreateInitializer().InitializeAsync(
-                db,
-                databasePath,
-                DatabaseKind.User);
+                DatabaseTestSupport.CreateContext(
+                    databasePath);
 
-            var performance = await db.Performances
-                .Include(x => x.Player)
-                .Include(x => x.Snapshot)
-                .ThenInclude(x => x.Course)
-                .SingleAsync();
-
-            Assert.Equal("Luigi Circuit", performance.Snapshot.Course.Name);
-            Assert.Equal(new DateOnly(2026, 9, 15),
-                performance.Snapshot.RankingDate);
-            Assert.Equal("Legacy Player", performance.Player.Name);
-            Assert.Equal(42, performance.Player.SitePlayerId);
-            Assert.Equal("FR", performance.Player.Country);
-            Assert.Equal(1, performance.Rank);
-            Assert.Equal(TimeSpan.FromMilliseconds(74_321), performance.Time);
-            Assert.Equal("God", performance.Standard);
-            Assert.Equal(
-                new DateOnly(2026, 9, 14),
-                performance.RecordDate);
-            Assert.Equal(
-                "https://example.test/legacy",
-                performance.VideoUrl);
+            await DatabaseTestSupport
+                .CreateInitializer()
+                .InitializeAsync(
+                    db,
+                    databasePath,
+                    DatabaseKind.User);
 
             await using var connection =
-                new SqliteConnection($"Data Source={databasePath}");
+                new SqliteConnection(
+                    $"Data Source={databasePath}");
+
             await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText =
-                "SELECT MigrationId FROM __EFMigrationsHistory;";
-            Assert.Equal(
-                MkddDatabaseMigrationMetadata.InitialCreateMigrationId,
-                Convert.ToString(await command.ExecuteScalarAsync()));
+
+            //
+            // Le schéma legacy doit avoir disparu.
+            //
+
+            Assert.False(
+                await TableExistsAsync(
+                    connection,
+                    "Snapshots"));
+
+            Assert.False(
+                await TableExistsAsync(
+                    connection,
+                    "Performances"));
+
+            //
+            // Le schéma historique actuel doit exister.
+            //
+
+            Assert.True(
+                await TableExistsAsync(
+                    connection,
+                    "Courses"));
+
+            Assert.True(
+                await TableExistsAsync(
+                    connection,
+                    "Players"));
+
+            Assert.True(
+                await TableExistsAsync(
+                    connection,
+                    "HistoricalPlayerAliases"));
+
+            Assert.True(
+                await TableExistsAsync(
+                    connection,
+                    "HistoricalPerformances"));
+
+            Assert.True(
+                await TableExistsAsync(
+                    connection,
+                    "HistoricalPerformanceSources"));
+
+            //
+            // Toutes les migrations doivent être appliquées.
+            //
+
+            Assert.Empty(
+                await db.Database
+                    .GetPendingMigrationsAsync());
         }
         finally
         {
-            await DatabaseTestSupport.DeleteDirectoryAsync(directory);
+            await DatabaseTestSupport
+                .DeleteDirectoryAsync(
+                    directory);
         }
     }
+
 
     [Fact]
     public async Task InitializeAsync_LegacyUserDatabase_CreatesReadablePreBaselineBackup()
@@ -126,28 +164,69 @@ public sealed class MkddDatabaseInitializerTests
 
             var backupPath = Assert.Single(
                 DatabaseTestSupport.GetBackups(databasePath));
-            await using var backup =
-                DatabaseTestSupport.CreateContext(backupPath);
-
-            Assert.Equal(1, await backup.Courses.CountAsync());
-            Assert.Equal(1, await backup.Players.CountAsync());
-            Assert.Equal(1, await backup.Snapshots.CountAsync());
-            Assert.Equal(1, await backup.Performances.CountAsync());
-            Assert.Equal(
-                "Legacy Player",
-                await backup.Players.Select(x => x.Name).SingleAsync());
-
             await using var connection =
-                new SqliteConnection($"Data Source={backupPath}");
+    new SqliteConnection(
+        $"Data Source={backupPath}");
+
             await connection.OpenAsync();
-            await using var command = connection.CreateCommand();
-            command.CommandText =
-                "SELECT COUNT(*) FROM sqlite_master " +
-                "WHERE type = 'table' " +
-                "AND name = '__EFMigrationsHistory';";
+
             Assert.Equal(
-                0L,
-                Convert.ToInt64(await command.ExecuteScalarAsync()));
+                1L,
+                await CountRowsAsync(
+                    connection,
+                    "Courses"));
+
+            Assert.Equal(
+                1L,
+                await CountRowsAsync(
+                    connection,
+                    "Players"));
+
+            Assert.Equal(
+                1L,
+                await CountRowsAsync(
+                    connection,
+                    "Snapshots"));
+
+            Assert.Equal(
+                1L,
+                await CountRowsAsync(
+                    connection,
+                    "Performances"));
+
+            await using (var playerCommand =
+                connection.CreateCommand())
+            {
+                playerCommand.CommandText =
+                    """
+        SELECT "Name"
+        FROM "Players";
+        """;
+
+                Assert.Equal(
+                    "Legacy Player",
+                    Convert.ToString(
+                        await playerCommand
+                            .ExecuteScalarAsync()));
+            }
+
+            await using (var historyCommand =
+                connection.CreateCommand())
+            {
+                historyCommand.CommandText =
+                    """
+        SELECT COUNT(*)
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = '__EFMigrationsHistory';
+        """;
+
+                Assert.Equal(
+                    0L,
+                    Convert.ToInt64(
+                        await historyCommand
+                            .ExecuteScalarAsync()));
+            }
         }
         finally
         {
@@ -319,5 +398,48 @@ public sealed class MkddDatabaseInitializerTests
             CancellationToken cancellationToken) =>
             Task.FromException(
                 new InvalidOperationException("Forced migration failure."));
+    }
+
+    private static async Task<long> CountRowsAsync(
+    SqliteConnection connection,
+    string tableName)
+    {
+        string quotedTableName =
+            tableName.Replace(
+                "\"",
+                "\"\"",
+                StringComparison.Ordinal);
+
+        await using var command =
+            connection.CreateCommand();
+
+        command.CommandText =
+            $"SELECT COUNT(*) FROM \"{quotedTableName}\";";
+
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync());
+    }
+
+    private static async Task<bool> TableExistsAsync(
+    SqliteConnection connection,
+    string tableName)
+    {
+        await using var command =
+            connection.CreateCommand();
+
+        command.CommandText =
+            """
+        SELECT COUNT(*)
+        FROM sqlite_master
+        WHERE type = 'table'
+          AND name = $tableName;
+        """;
+
+        command.Parameters.AddWithValue(
+            "$tableName",
+            tableName);
+
+        return Convert.ToInt64(
+            await command.ExecuteScalarAsync()) == 1L;
     }
 }

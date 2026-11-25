@@ -9,10 +9,6 @@ public sealed class MkddDbContext : DbContext
 
     public DbSet<MkddPlayer> Players => Set<MkddPlayer>();
 
-    public DbSet<MkddSnapshot> Snapshots => Set<MkddSnapshot>();
-
-    public DbSet<MkddPerformanceEntity> Performances => Set<MkddPerformanceEntity>();
-
     public DbSet<MkddHistoricalPlayerAlias> HistoricalPlayerAliases => Set<MkddHistoricalPlayerAlias>();
 
     public DbSet<MkddHistoricalPerformance> HistoricalPerformances => Set<MkddHistoricalPerformance>();
@@ -33,23 +29,7 @@ public sealed class MkddDbContext : DbContext
 
         modelBuilder.Entity<MkddPlayer>()
             .HasIndex(x => x.SitePlayerId)
-            .IsUnique();
-
-        modelBuilder.Entity<MkddSnapshot>()
-    .HasIndex(x => new
-    {
-        x.CourseId,
-        x.RankingDate
-    })
-    .IsUnique();
-
-        modelBuilder.Entity<MkddPerformanceEntity>()
-            .HasIndex(x => new
-            {
-                x.SnapshotId,
-                x.PlayerId
-            })
-            .IsUnique();
+            .IsUnique();        
 
         modelBuilder.Entity<MkddHistoricalPlayerAlias>()
     .HasIndex(x => new
