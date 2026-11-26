@@ -432,14 +432,8 @@ static void PrintPre2003DateCorrectionPlan(Pre2003DateCorrectionPlan plan)
     }
 }
 
-static string FormatMigrationDate(DateOnly? date) =>
-    date?.ToString("dd/MM/yyyy") ?? "aucune";
-
 static string FormatDiagnosticTime(TimeSpan time) =>
     time.ToString(@"m\:ss\.fff", CultureInfo.InvariantCulture);
-
-static string FormatDiagnosticDate(DateOnly? date) =>
-    date?.ToString("dd/MM/yyyy", CultureInfo.InvariantCulture) ?? "aucune";
 
 static string FormatDiagnosticDateTime(DateTimeOffset? date) =>
     date?.ToString("O", CultureInfo.InvariantCulture) ?? "aucune";

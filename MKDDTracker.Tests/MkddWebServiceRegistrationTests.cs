@@ -36,5 +36,6 @@ public sealed class MkddWebServiceRegistrationTests
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<MkddHistoricalPlayerTimelineService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<MkddHistoricalPlayerProfileService>());
         Assert.NotNull(scope.ServiceProvider.GetRequiredService<IDbContextFactory<MkddDbContext>>());
+        Assert.NotNull(scope.ServiceProvider.GetRequiredService<MkddHistoricalMultiPlayerComparisonService>());
     }
 }

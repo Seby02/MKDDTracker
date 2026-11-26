@@ -41,6 +41,7 @@ public static class MkddWebServiceRegistration
         services.AddScoped<MkddHistoricalDatabaseCheckService>();
         services.AddScoped<MkddHistoricalDashboardService>();
         services.AddScoped<MkddHistoricalImportService>();
+        services.AddScoped<MkddHistoricalMultiPlayerComparisonService>();
         services.AddScoped<MkddHistoricalRankingService>(
     serviceProvider =>
         new MkddHistoricalRankingService(
