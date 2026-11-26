@@ -10,6 +10,7 @@
 @inject MkddHistoricalRankingSelectionService SelectionService
 @inject MkddHistoricalRankingComparisonService ComparisonService
 @inject MkddHistoricalPlayerTimelineService TimelineService
+@inject MkddHistoricalMultiPlayerComparisonService MultiPlayerComparisonService
 
 <PageTitle>Évolution - MKDD Tracker</PageTitle>
 
@@ -18,16 +19,96 @@
 <div class="card mb-4">
     <div class="card-body">
         <h4 class="mb-3">Critères d'analyse historique</h4>
-        <div class="row g-3">
-            <div class="col-md-6">
-                <label class="form-label">Joueur</label>
-                <select class="form-select" @bind="selectedPlayerKey" @bind:after="OnCriteriaChangedAsync">
-                    @foreach (var player in players)
-                    {
-                        <option value="@player.Key">@player.DisplayName</option>
-                    }
-                </select>
+        <div class="mb-3">
+            <label class="form-label d-block">
+                Mode d'analyse
+            </label>
+
+            <div class="btn-group"
+                 role="group"
+                 aria-label="Mode d'analyse">
+                <button type="button"
+                        class="@GetAnalysisModeButtonClass(false)"
+                        @onclick="() => SetAnalysisModeAsync(false)"
+                        disabled="@loading">
+                    Joueur unique
+                </button>
+
+                <button type="button"
+                        class="@GetAnalysisModeButtonClass(true)"
+                        @onclick="() => SetAnalysisModeAsync(true)"
+                        disabled="@loading">
+                    Comparaison multi-joueurs
+                </button>
             </div>
+        </div>
+        <div class="row g-3">
+            @if (!isMultiPlayerMode)
+            {
+                <div class="col-md-6">
+                    <label class="form-label">Joueur</label>
+
+                    <select class="form-select"
+                            @bind="selectedPlayerKey"
+                            @bind:after="OnCriteriaChangedAsync">
+                        @foreach (HistoricalPlayerOption player in players)
+                        {
+                            <option value="@player.Key">
+                                @player.DisplayName
+                            </option>
+                        }
+                    </select>
+                </div>
+            }
+            else
+            {
+                <div class="col-12">
+                    <label class="form-label">
+                        Joueurs à comparer
+                    </label>
+
+                    <div class="card">
+                        <div class="card-body">
+                            <p class="text-muted small">
+                                Sélectionnez entre 2 et 4 joueurs modernes.
+                                Les alias historiques liés à chaque joueur seront
+                                automatiquement consolidés.
+                            </p>
+
+                            <div class="row g-2">
+                                @foreach (HistoricalPlayerOption player
+                                                            in modernPlayers)
+                                {
+                                    int playerId = player.PlayerId!.Value;
+
+                                    <div class="col-md-6 col-lg-4">
+                                        <div class="form-check">
+                                            <input class="form-check-input"
+                                                   type="checkbox"
+                                                   id="@($"multi-player-{playerId}")"
+                                                   checked="@selectedMultiPlayerIds.Contains(playerId)"
+                                                   disabled="@IsMultiPlayerSelectionDisabled(playerId)"
+                                                   @onchange="eventArgs =>
+                                                   OnMultiPlayerChangedAsync(
+                                                       playerId,
+                                                       eventArgs)" />
+
+                                    <label class="form-check-label"
+                                           for="@($"multi-player-{playerId}")">
+                                        @player.DisplayName
+                                    </label>
+                                </div>
+                            </div>
+                                                        }
+                            </div>
+
+                            <div class="small mt-3 @GetMultiPlayerSelectionClass()">
+                                @GetMultiPlayerSelectionMessage()
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            }
             <div class="col-md-6">
                 <label class="form-label">Circuit</label>
                 <select class="form-select" @bind="selectedCourse" @bind:after="OnCriteriaChangedAsync">
@@ -61,14 +142,29 @@
                 <InputDate class="form-control" @bind-Value="endDate" />
             </div>
             <div class="col-12">
-                <button class="btn btn-primary" @onclick="AnalyzeAsync"
-                        disabled="@(loading || availableHistoricalCount < 2 || !AreDatesValid)">
+                <button class="btn btn-primary"
+                        @onclick="AnalyzeAsync"
+                        disabled="@(!CanAnalyze)">
                     @(loading ? "Analyse en cours..." : "Analyser")
                 </button>
             </div>
             <div class="col-12 text-muted">
-                <strong>PR historiques disponibles :</strong> @availableHistoricalCount
-                <div class="small">La date correspond à la première publication connue dans les archives Yahoo ; elle ne représente pas nécessairement la date de réalisation du chrono.</div>
+                @if (!isMultiPlayerMode)
+                {
+                    <strong>PR historiques disponibles :</strong>
+                    <span>@availableHistoricalCount</span>
+                }
+                else
+                {
+                    <strong>Joueurs sélectionnés :</strong>
+                    <span>@($"{selectedMultiPlayerIds.Count} / 4")</span>
+                }
+
+                <div class="small">
+                    La date correspond à la première publication connue dans
+                    les archives Yahoo ; elle ne représente pas nécessairement
+                    la date de réalisation du chrono.
+                </div>
             </div>
         </div>
     </div>
@@ -82,54 +178,243 @@ else if (loading)
 {
     <p>Chargement de l'évolution...</p>
 }
+else if (isMultiPlayerMode &&
+         multiPlayerComparison is null)
+{
+    <div class="alert alert-info">
+        Sélectionnez entre 2 et 4 joueurs, puis lancez l'analyse.
+    </div>
+}
+else if (isMultiPlayerMode)
+{
+    <h2>
+        Comparaison multi-joueurs —
+        @multiPlayerComparison!.CourseName
+    </h2>
+
+    <p class="text-muted">
+        @multiPlayerComparison.TimeType,
+        @FormatFrequency(multiPlayerComparison.FrequencyFilter),
+        du @multiPlayerComparison.StartDate.ToString("dd/MM/yyyy")
+        au @multiPlayerComparison.EndDate.ToString("dd/MM/yyyy")
+    </p>
+
+    @if (multiPlayerComparison.Players.Count == 0)
+    {
+        <div class="alert alert-warning">
+            Aucun des joueurs sélectionnés ne dispose de données
+            pour ces critères.
+        </div>
+    }
+    else
+    {
+        <div class="table-responsive">
+            <table class="table table-striped table-hover align-middle">
+                <thead>
+                    <tr>
+                        <th>Joueur</th>
+                        <th>Chrono initial</th>
+                        <th>Chrono final</th>
+                        <th>Gain chrono</th>
+                        <th>Rang initial</th>
+                        <th>Rang final</th>
+                        <th>Places</th>
+                        <th>PR</th>
+                    </tr>
+                </thead>
+
+                <tbody>
+                    @foreach (
+                                MkddHistoricalPlayerComparisonEntry player
+                                in multiPlayerComparison.Players)
+                    {
+                        <tr>
+                            <td>
+                                <strong>@player.PlayerName</strong>
+
+                                @if (player.IsNewEntry)
+                                {
+                                    <span class="badge text-bg-info ms-1">
+                                        Nouvel entrant
+                                    </span>
+                                }
+                            </td>
+
+                            <td>
+                                @FormatRaceTime(player.InitialTime)
+                            </td>
+
+                            <td>
+                                @FormatRaceTime(player.FinalTime)
+                            </td>
+
+                            <td class="@GetTimeImprovementClass(
+                                                                                                player.TimeImprovement)">
+                    @FormatTimeImprovement(
+                                        player.TimeImprovement)
+                </td>
+
+                <td>
+                    @FormatRank(player.InitialRank)
+                </td>
+
+                <td>
+                    @FormatRank(player.FinalRank)
+                </td>
+
+                <td class="@GetPlacesClass(
+                                                                        player.PlacesGained)">
+                    @FormatPlaces(player.PlacesGained)
+                </td>
+
+                            <td>
+                                @player.PrCount
+                            </td>
+                        </tr>
+                        }
+                </tbody>
+            </table>
+        </div>
+
+        <div class="alert alert-secondary mt-3">
+            Les graphiques multi-joueurs seront ajoutés dans
+            l'étape suivante. Les graphiques actuels restent
+            disponibles en mode joueur unique.
+        </div>
+    }
+}
 else if (comparison is null)
 {
-    <div class="alert alert-info">Sélectionnez des critères disposant d'au moins deux PR historiques.</div>
+    <div class="alert alert-info">
+        Sélectionnez des critères disposant de données historiques.
+    </div>
 }
 else
 {
     var entry = selectedEntry;
-    <h2>@(entry?.PlayerName ?? selectedPlayer?.DisplayName ?? "Joueur") — @comparison.CourseName</h2>
 
-    @if (entry is null || entry.Status == MkddHistoricalRankingComparisonStatus.Unavailable)
+    <h2>
+        @(entry?.PlayerName
+            ?? selectedPlayer?.DisplayName
+            ?? "Joueur")
+    —
+    @comparison.CourseName
+</h2>
+
+@if (entry is null ||
+         entry.Status ==
+            MkddHistoricalRankingComparisonStatus.Unavailable)
     {
-        <div class="alert alert-warning">Le classement historique n'est pas disponible pour ces critères.</div>
+        <div class="alert alert-warning">
+            Le classement historique n'est pas disponible
+            pour ces critères.
+        </div>
     }
     else
     {
-        @if (entry.Status == MkddHistoricalRankingComparisonStatus.NewEntrant)
+        @if (entry.Status ==
+                     MkddHistoricalRankingComparisonStatus.NewEntrant)
         {
-            <div class="alert alert-info">Ce joueur est un nouveau entrant : il n'apparaît pas dans le classement initial.</div>
+            <div class="alert alert-info">
+                Ce joueur est un nouvel entrant :
+                il n'apparaît pas dans le classement initial.
+            </div>
         }
-        else if (entry.Status == MkddHistoricalRankingComparisonStatus.MissingAtEnd)
+        else if (entry.Status ==
+                 MkddHistoricalRankingComparisonStatus.MissingAtEnd)
         {
-            <div class="alert alert-warning">Ce joueur n'apparaît plus dans le classement final.</div>
+            <div class="alert alert-warning">
+                Ce joueur n'apparaît plus dans le classement final.
+            </div>
         }
 
         <div class="row g-3 mb-4">
-            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Rang initial</h6><h2>@FormatRank(entry.InitialRank)</h2></div></div></div>
-            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Rang final</h6><h2>@FormatRank(entry.FinalRank)</h2></div></div></div>
-            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Progression totale</h6><h2>@FormatPlaces(entry.PlacesGained)</h2></div></div></div>
-            <div class="col-md-3"><div class="card h-100"><div class="card-body"><h6>Chrono final</h6><h2>@FormatRaceTime(entry.FinalTime)</h2></div></div></div>
+            <div class="col-md-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6>Rang initial</h6>
+                        <h2>@FormatRank(entry.InitialRank)</h2>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6>Rang final</h6>
+                        <h2>@FormatRank(entry.FinalRank)</h2>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6>Progression totale</h6>
+                        <h2>@FormatPlaces(entry.PlacesGained)</h2>
+                    </div>
+                </div>
+            </div>
+
+            <div class="col-md-3">
+                <div class="card h-100">
+                    <div class="card-body">
+                        <h6>Chrono final</h6>
+                        <h2>@FormatRaceTime(entry.FinalTime)</h2>
+                    </div>
+                </div>
+            </div>
         </div>
 
         <div class="card">
             <div class="card-body">
                 <h5>Détail de la comparaison</h5>
-                <p>Statut : <strong>@entry.Status</strong></p>
-                <p>Rang : <strong>@FormatRank(entry.InitialRank) → @FormatRank(entry.FinalRank)</strong> (@FormatPlaces(entry.PlacesGained))</p>
-                <p>Chrono : <strong>@FormatRaceTime(entry.InitialTime) → @FormatRaceTime(entry.FinalTime)</strong></p>
-                <p>Temps gagné/perdu : <strong>@FormatTimeImprovement(entry.TimeImprovement)</strong></p>
-            </div>
-        </div>
+
+                <p>
+                    Statut :
+                    <strong>@entry.Status</strong>
+                </p>
+
+                <p>
+                    Rang :
+                    <strong>
+                        @FormatRank(entry.InitialRank)
+                        →
+                        @FormatRank(entry.FinalRank)
+                    </strong>
+                    (@FormatPlaces(entry.PlacesGained))
+                </p>
+
+                <p>
+                    Chrono :
+                    <strong>
+                        @FormatRaceTime(entry.InitialTime)
+                        →
+                        @FormatRaceTime(entry.FinalTime)
+                    </strong>
+                </p>
+
+                <p>
+                    Temps gagné/perdu :
+                    <strong>
+                        @FormatTimeImprovement(
+                        entry.TimeImprovement)
+            </strong>
+        </p>
+    </div>
+</div>
     }
 
     <section class="mt-4">
         <h3>Évolution historique</h3>
 
-        @if (timeline is null || timeline.Points.Count == 0)
+        @if (timeline is null ||
+            timeline.Points.Count == 0)
         {
-            <div class="alert alert-info">Aucun point de chronologie n'est disponible pour ces critères.</div>
+            <div class="alert alert-info">
+                Aucun point de chronologie n'est disponible
+                pour ces critères.
+            </div>
         }
         else
         {
@@ -145,23 +430,45 @@ else
                             <th>Source(s)</th>
                         </tr>
                     </thead>
+
                     <tbody>
-                        @foreach (var point in timeline.Points)
+                        @foreach (
+                                        MkddHistoricalPlayerTimelinePoint point
+                                        in timeline.Points)
                         {
                             <tr>
-                                <td>@point.Date.ToString("dd/MM/yyyy")</td>
-                                <td>@FormatRaceTime(point.Time)</td>
-                                <td class="@GetTimeImprovementClass(point.TimeImprovement)">
-                                    @FormatTimeImprovement(point.TimeImprovement)
-                                </td>
-                                <td>#@point.Rank</td>
-                                <td class="@GetPlacesClass(point.PlacesGained)">
-                                    @FormatPlaces(point.PlacesGained)
-                                </td>
                                 <td>
-                                    @foreach (string source in point.Sources)
+                                    @point.Date.ToString("dd/MM/yyyy")
+                                </td>
+
+                                <td>
+                                    @FormatRaceTime(point.Time)
+                                </td>
+
+                                <td class="@GetTimeImprovementClass(
+                                                                        point.TimeImprovement)">
+                        @FormatTimeImprovement(
+                                                point.TimeImprovement)
+                    </td>
+
+                    <td>
+                        #@point.Rank
+                    </td>
+
+                    <td class="@GetPlacesClass(
+                                                            point.PlacesGained)">
+                        @FormatPlaces(
+                                                point.PlacesGained)
+                    </td>
+
+                    <td>
+                        @foreach (
+                                                string source
+                                                in point.Sources)
                                     {
-                                        <span class="badge @GetSourceBadgeClass(source) me-1">@source</span>
+                                        <span class="badge @GetSourceBadgeClass(source) me-1">
+                                            @source
+                                        </span>
                                     }
                                 </td>
                             </tr>
@@ -172,11 +479,16 @@ else
 
             @if (timeline.Points.Count == 1)
             {
-                <p class="text-muted">Un seul point est disponible : il n'y a pas suffisamment d'évolution pour tracer une progression.</p>
+                <p class="text-muted">
+                    Un seul point est disponible :
+                    il n'y a pas suffisamment d'évolution
+                    pour tracer une progression.
+                </p>
             }
             else
             {
                 <MkddHistoricalTimeEvolutionChart Points="timeline.Points" />
+
                 <MkddHistoricalRankEvolutionChart Points="timeline.Points" />
             }
         }
@@ -186,6 +498,9 @@ else
 @code {
     private List<HistoricalPlayerOption> players = [];
     private List<string> courses = [];
+    private bool isMultiPlayerMode;
+    private HashSet<int> selectedMultiPlayerIds = [];
+    private MkddHistoricalMultiPlayerComparison? multiPlayerComparison;
     private string selectedPlayerKey = "";
     private string selectedCourse = "";
     private string selectedTimeType = "ThreeLap";
@@ -221,6 +536,29 @@ else
 
     private bool AreDatesValid => startDate.Date <= endDate.Date;
 
+    private bool HasValidMultiPlayerSelection =>
+    selectedMultiPlayerIds.Count is >= 2 and <= 4;
+
+    private bool CanAnalyze =>
+    !loading &&
+    AreDatesValid &&
+    !string.IsNullOrWhiteSpace(selectedCourse) &&
+    (
+        isMultiPlayerMode
+            ? HasValidMultiPlayerSelection
+            : selectedPlayer is not null &&
+              availableHistoricalCount > 0
+    );
+
+    private IReadOnlyList<HistoricalPlayerOption> modernPlayers =>
+    players
+        .Where(player =>
+            player.PlayerId.HasValue)
+        .OrderBy(player =>
+            player.DisplayName,
+            StringComparer.OrdinalIgnoreCase)
+        .ToList();
+
     protected override async Task OnInitializedAsync()
     {
         try
@@ -242,6 +580,136 @@ else
             errorMessage = ex.Message;
         }
     }
+
+    private async Task SetAnalysisModeAsync(
+    bool multiPlayerMode)
+    {
+        if (isMultiPlayerMode == multiPlayerMode)
+        {
+            return;
+        }
+
+        isMultiPlayerMode =
+            multiPlayerMode;
+
+        errorMessage =
+            null;
+
+        comparison =
+            null;
+
+        timeline =
+            null;
+
+        multiPlayerComparison =
+            null;
+
+        if (isMultiPlayerMode)
+        {
+            InitializeMultiPlayerSelection();
+        }
+
+        await LoadAvailableDatesAsync();
+    }
+
+    private void InitializeMultiPlayerSelection()
+    {
+        selectedMultiPlayerIds.Clear();
+
+        HistoricalPlayerOption? currentPlayer =
+            selectedPlayer;
+
+        if (currentPlayer?.PlayerId is not null)
+        {
+            selectedMultiPlayerIds.Add(
+                currentPlayer.PlayerId.Value);
+        }
+
+        foreach (HistoricalPlayerOption player
+                 in modernPlayers)
+        {
+
+            if (selectedMultiPlayerIds.Count >= 2)
+            {
+                break;
+            }
+
+            selectedMultiPlayerIds.Add(
+                player.PlayerId!.Value);
+
+        }
+    }
+
+    private async Task OnMultiPlayerChangedAsync(
+    int playerId,
+    ChangeEventArgs eventArgs)
+    {
+        bool isSelected =
+            eventArgs.Value is bool value &&
+            value;
+
+        if (isSelected)
+        {
+            if (selectedMultiPlayerIds.Count < 4)
+            {
+                selectedMultiPlayerIds.Add(
+                    playerId);
+            }
+        }
+        else
+        {
+            selectedMultiPlayerIds.Remove(
+                playerId);
+        }
+
+        errorMessage =
+            null;
+
+        multiPlayerComparison =
+            null;
+
+        await LoadAvailableDatesAsync();
+    }
+
+    private bool IsMultiPlayerSelectionDisabled(
+        int playerId) =>
+        loading ||
+        (
+            !selectedMultiPlayerIds.Contains(playerId) &&
+            selectedMultiPlayerIds.Count >= 4
+        );
+
+    private string GetMultiPlayerSelectionMessage()
+    {
+        int count =
+            selectedMultiPlayerIds.Count;
+
+        return count switch
+        {
+            0 =>
+                "Sélectionnez au moins deux joueurs.",
+
+            1 =>
+                "Sélectionnez encore un joueur.",
+
+            >= 2 and <= 4 =>
+                $"{count} joueurs sélectionnés.",
+
+            _ =>
+                "Quatre joueurs maximum."
+        };
+    }
+
+    private string GetMultiPlayerSelectionClass() =>
+        HasValidMultiPlayerSelection
+            ? "text-success"
+            : "text-danger";
+
+    private string GetAnalysisModeButtonClass(
+        bool multiPlayerMode) =>
+        isMultiPlayerMode == multiPlayerMode
+            ? "btn btn-primary"
+            : "btn btn-outline-primary";
 
     private string? ResolvePlayerKey(string? value)
     {
@@ -268,49 +736,168 @@ else
 
     private async Task OnCriteriaChangedAsync()
     {
-        errorMessage = null;
-        comparison = null;
-        timeline = null;
+        errorMessage =
+            null;
+
+        comparison =
+            null;
+
+        timeline =
+            null;
+
+        multiPlayerComparison =
+            null;
+
         await LoadAvailableDatesAsync();
     }
 
     private async Task LoadAvailableDatesAsync()
     {
-        availableHistoricalCount = 0;
-        if (selectedPlayer is null || string.IsNullOrWhiteSpace(selectedCourse))
-            return;
+        availableHistoricalCount =
+            0;
 
-        HistoricalPerformanceDateRange range = await SelectionService.GetDateRangeAsync(
-            selectedPlayer, selectedCourse, selectedTimeType, selectedFrequency);
-        availableHistoricalCount = range.Count;
-        if (range.FirstSeenAt is not null && range.LastSeenAt is not null)
+        if (string.IsNullOrWhiteSpace(selectedCourse))
         {
-            startDate = range.FirstSeenAt.Value.Date;
-            endDate = range.LastSeenAt.Value.Date;
+            return;
+        }
+
+        if (!isMultiPlayerMode)
+        {
+            if (selectedPlayer is null)
+            {
+                return;
+            }
+
+            HistoricalPerformanceDateRange range =
+                await SelectionService.GetDateRangeAsync(
+                    selectedPlayer,
+                    selectedCourse,
+                    selectedTimeType,
+                    selectedFrequency);
+
+            availableHistoricalCount =
+                range.Count;
+
+            if (range.FirstSeenAt is not null &&
+                range.LastSeenAt is not null)
+            {
+                startDate =
+                    range.FirstSeenAt.Value.Date;
+
+                endDate =
+                    range.LastSeenAt.Value.Date;
+            }
+
+            return;
+        }
+
+        DateTimeOffset? earliest =
+            null;
+
+        DateTimeOffset? latest =
+            null;
+
+        int totalCount =
+            0;
+
+        foreach (HistoricalPlayerOption player
+                 in modernPlayers.Where(player =>
+                     selectedMultiPlayerIds.Contains(
+                         player.PlayerId!.Value)))
+        {
+            HistoricalPerformanceDateRange range =
+                await SelectionService.GetDateRangeAsync(
+                    player,
+                    selectedCourse,
+                    selectedTimeType,
+                    selectedFrequency);
+
+            totalCount +=
+                range.Count;
+
+            if (range.FirstSeenAt is not null &&
+                (
+                    earliest is null ||
+                    range.FirstSeenAt.Value < earliest.Value
+                ))
+            {
+                earliest =
+                    range.FirstSeenAt.Value;
+            }
+
+            if (range.LastSeenAt is not null &&
+                (
+                    latest is null ||
+                    range.LastSeenAt.Value > latest.Value
+                ))
+            {
+                latest =
+                    range.LastSeenAt.Value;
+            }
+        }
+
+        availableHistoricalCount =
+            totalCount;
+
+        if (earliest is not null &&
+            latest is not null)
+        {
+            startDate =
+                earliest.Value.Date;
+
+            endDate =
+                latest.Value.Date;
         }
     }
 
     private async Task AnalyzeAsync()
     {
         if (loading)
+        {
             return;
+        }
 
         errorMessage = null;
         comparison = null;
         timeline = null;
-        HistoricalPlayerOption? player = selectedPlayer;
-        if (player is null || string.IsNullOrWhiteSpace(selectedCourse))
-        {
-            errorMessage = "Sélectionnez un joueur et un circuit.";
-            return;
-        }
+        multiPlayerComparison = null;
+
         if (!AreDatesValid)
         {
-            errorMessage = "La date de début doit précéder la date de fin.";
+            errorMessage =
+                "La date de début doit précéder ou être égale à la date de fin.";
+
             return;
         }
 
+        if (string.IsNullOrWhiteSpace(selectedCourse))
+        {
+            errorMessage =
+                "Sélectionnez un circuit.";
+
+            return;
+        }
+
+        if (isMultiPlayerMode)
+        {
+            if (!HasValidMultiPlayerSelection)
+            {
+                errorMessage =
+                    "Sélectionnez entre deux et quatre joueurs.";
+
+                return;
+            }
+        }
+        else if (selectedPlayer is null)
+        {
+            errorMessage =
+                "Sélectionnez un joueur.";
+
+            return;
+        }       
+
         loading = true;
+
         try
         {
             DateTimeOffset startAt =
@@ -327,31 +914,98 @@ else
                         .AddTicks(-1),
                     TimeSpan.Zero);
 
-            comparison =
-                await ComparisonService.CompareAsync(
-                    selectedCourse,
-                    selectedTimeType,
-                    selectedFrequency,
+            if (isMultiPlayerMode)
+            {
+                await AnalyzeMultiPlayerAsync(
                     startAt,
                     endAt);
+            }
+            else
+            {
+                await AnalyzeSinglePlayerAsync(
+                    startAt,
+                    endAt);
+            }
+        }
+        catch (Exception ex)
+        {
+            errorMessage =
+                ex.Message;
+        }
+        finally
+        {
+            loading =
+                false;
+        }
+    }
 
-            timeline = await TimelineService.GetTimelineAsync(
+    private async Task AnalyzeSinglePlayerAsync(
+    DateTimeOffset startAt,
+    DateTimeOffset endAt)
+    {
+        HistoricalPlayerOption? player =
+            selectedPlayer;
+
+        if (player is null)
+        {
+            throw new InvalidOperationException(
+                "Sélectionnez un joueur.");
+        }
+
+        comparison =
+            await ComparisonService.CompareAsync(
+                selectedCourse,
+                selectedTimeType,
+                selectedFrequency,
+                startAt,
+                endAt);
+
+        timeline =
+            await TimelineService.GetTimelineAsync(
                 player,
                 selectedCourse,
                 selectedTimeType,
                 selectedFrequency,
                 startAt,
                 endAt);
-        }
-        catch (Exception ex)
-        {
-            errorMessage = ex.Message;
-        }
-        finally
-        {
-            loading = false;
-        }
     }
+
+    private async Task AnalyzeMultiPlayerAsync(
+        DateTimeOffset startAt,
+        DateTimeOffset endAt)
+    {
+        if (!HasValidMultiPlayerSelection)
+        {
+            throw new InvalidOperationException(
+                "Sélectionnez entre deux et quatre joueurs.");
+        }
+
+        multiPlayerComparison =
+            await MultiPlayerComparisonService.CompareAsync(
+                selectedMultiPlayerIds.ToArray(),
+                selectedCourse,
+                selectedTimeType,
+                selectedFrequency,
+                startAt,
+                endAt);
+    }
+
+    private static string FormatFrequency(
+    HistoricalFrequencyFilter frequency) =>
+    frequency switch
+    {
+        HistoricalFrequencyFilter.Hz50 =>
+            "50 Hz",
+
+        HistoricalFrequencyFilter.Hz60 =>
+            "60 Hz",
+
+        HistoricalFrequencyFilter.Unknown =>
+            "Fréquence inconnue",
+
+        _ =>
+            "Toutes fréquences"
+    };
 
     private static string FormatRank(int? rank) => rank is null ? "—" : $"#{rank}";
 
